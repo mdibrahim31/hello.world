@@ -54,6 +54,8 @@ def run_ptb_bot():
                 BotCommand("search", "🔍 Search Supabase by Image Name"),
                 BotCommand("orders", "📦 View my recent orders"),
                 BotCommand("admin", "👑 Admin order summary"),
+                BotCommand("tables", "🗄️ Database tables overview"),
+                BotCommand("migrate", "⚡ Create & initialize 14 DB tables"),
                 BotCommand("cancel", "❌ Cancel current step"),
                 BotCommand("help", "ℹ️ Bot guide & all commands"),
                 BotCommand("status", "📍 Check chat ID & Supabase status")
@@ -93,6 +95,8 @@ def run_ptb_bot():
     app.add_handler(CommandHandler("cancel", unified_handler))
     app.add_handler(CommandHandler("orders", unified_handler))
     app.add_handler(CommandHandler("admin", unified_handler))
+    app.add_handler(CommandHandler("tables", unified_handler))
+    app.add_handler(CommandHandler("migrate", unified_handler))
     app.add_handler(CommandHandler("help", unified_handler))
     app.add_handler(CommandHandler("status", unified_handler))
 

@@ -20,6 +20,7 @@ from datetime import datetime
 
 import database
 import supabase_client
+import postgres_migrator
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 WEB_APP_URL = os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://hello-world-fcg3.onrender.com")).strip()
@@ -244,6 +245,12 @@ def handle_update(update, bot_token=None, web_url=None):
 
     if text.startswith("/status"):
         return send_status_message(chat_id, token, app_url)
+
+    if text.startswith("/tables"):
+        return send_tables_overview_message(chat_id, token, app_url)
+
+    if text.startswith("/migrate"):
+        return send_run_migrate_message(chat_id, token, app_url)
 
     # 3. Handle Active Multi-Step Conversation State
     # ── State: reg_name (Step 1 -> Step 2) ─────────────────────────
@@ -591,5 +598,82 @@ def send_status_message(chat_id, bot_token=None, web_url=None):
     return send_telegram_request("sendMessage", {
         "chat_id": chat_id,
         "text": status_text,
+        "parse_mode": "Markdown"
+    }, bot_token=bot_token)
+
+def send_tables_overview_message(chat_id, bot_token=None, web_url=None):
+    """Sends a summary of all database tables and counts to Telegram."""
+    pg_status = postgres_migrator.get_database_status_and_tables()
+    is_pg = pg_status.get("configured") and pg_status.get("connected")
+
+    lines = []
+    lines.append("🗄️ *Database Tables Overview*")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+    if is_pg:
+        lines.append(f"🔌 *Engine:* PostgreSQL ({pg_status.get('driver')})")
+        lines.append(f"📊 *Total Tables:* {pg_status.get('total_tables', 0)}")
+    else:
+        lines.append("🔌 *Engine:* Local SQLite / Fallback (DATABASE_URL not connected)")
+
+    lines.append("\n📋 *Active Tables:*")
+    counts = pg_status.get("counts", {})
+    all_tables = [
+        ("users", "User profiles & uploaded photos"),
+        ("vendors", "Vendor & Merchant directory"),
+        ("riders", "Delivery Riders"),
+        ("customers", "Customer contact records"),
+        ("categories", "Product categories"),
+        ("products", "Catalog items"),
+        ("orders", "Customer orders"),
+        ("order_items", "Ordered product items"),
+        ("delivery_tracking", "Live delivery coordinates"),
+        ("payments", "Transaction records"),
+        ("reviews", "Ratings & feedback"),
+        ("coupons", "Promo codes"),
+        ("notifications", "System alerts"),
+        ("audit_logs", "History logs")
+    ]
+
+    for tbl, desc in all_tables:
+        cnt = counts.get(tbl, 0)
+        lines.append(f"• `{tbl}`: {cnt} records ({desc})")
+
+    lines.append("\n💡 _Tip: Run /migrate to create or update all tables automatically via server._")
+
+    return send_telegram_request("sendMessage", {
+        "chat_id": chat_id,
+        "text": "\n".join(lines),
+        "parse_mode": "Markdown"
+    }, bot_token=bot_token)
+
+def send_run_migrate_message(chat_id, bot_token=None, web_url=None):
+    """Executes migration and replies to the user."""
+    send_telegram_request("sendMessage", {
+        "chat_id": chat_id,
+        "text": "🔄 *Running schema migration via server...*\nConnecting to database and creating 14 tables...",
+        "parse_mode": "Markdown"
+    }, bot_token=bot_token)
+
+    res = postgres_migrator.run_migrations()
+    if res.get("success"):
+        text = (
+            "✅ *Database Migration Completed!*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎉 {res.get('message')}\n"
+            f"📊 Tables created/verified: `{len(res.get('tables', []))}`\n\n"
+            "All tables (vendors, riders, customers, orders, payments, etc.) are ready for live experimentation!"
+        )
+    else:
+        err = res.get("error", "Unknown error")
+        text = (
+            "⚠️ *Database Migration Notice*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Result: {err}\n\n"
+            "Ensure `DATABASE_URL` is set in your Render environment variables and redeploy."
+        )
+
+    return send_telegram_request("sendMessage", {
+        "chat_id": chat_id,
+        "text": text,
         "parse_mode": "Markdown"
     }, bot_token=bot_token)

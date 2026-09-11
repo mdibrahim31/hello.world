@@ -22,6 +22,7 @@ except ImportError:
 import database
 import supabase_client
 import bot_workflow
+import postgres_migrator
 
 # Telegram Bot Credentials
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -342,10 +343,64 @@ try:
             "has_key": has_key,
             "bucket_name": supabase_client.BUCKET_NAME,
             "client_initialized": bool(client is not None),
-            "table": "users",
-            "schema_fields": ["id", "name", "phone", "image_name", "image_url", "created_at"],
+            "table_count": 10,
+            "tables": supabase_client.get_table_list(),
             "sql_migration": supabase_client.get_supabase_sql_migration()
         })
+
+    @app.route("/api/tables", methods=["GET"])
+    def tables_overview_endpoint():
+        """Returns an overview of the 10 e-commerce & delivery tables."""
+        conn = database.get_db_connection()
+        cur = conn.cursor()
+        
+        vendors_cnt = cur.execute("SELECT COUNT(*) as c FROM vendors").fetchone()["c"]
+        riders_cnt = cur.execute("SELECT COUNT(*) as c FROM riders").fetchone()["c"]
+        customers_cnt = cur.execute("SELECT COUNT(*) as c FROM customers").fetchone()["c"]
+        orders_cnt = cur.execute("SELECT COUNT(*) as c FROM orders").fetchone()["c"]
+        users_cnt = cur.execute("SELECT COUNT(*) as c FROM local_users").fetchone()["c"]
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "tables": supabase_client.get_table_list(),
+            "counts": {
+                "vendors": vendors_cnt,
+                "riders": riders_cnt,
+                "customers": customers_cnt,
+                "orders": orders_cnt,
+                "users": users_cnt
+            }
+        })
+
+    @app.route("/api/vendors", methods=["GET"])
+    def get_vendors_endpoint():
+        conn = database.get_db_connection()
+        cur = conn.cursor()
+        rows = cur.execute("SELECT * FROM vendors ORDER BY id ASC").fetchall()
+        conn.close()
+        return jsonify({"success": True, "count": len(rows), "vendors": [dict(r) for r in rows]})
+
+    @app.route("/api/riders", methods=["GET"])
+    def get_riders_endpoint():
+        conn = database.get_db_connection()
+        cur = conn.cursor()
+        rows = cur.execute("SELECT * FROM riders ORDER BY id ASC").fetchall()
+        conn.close()
+        return jsonify({"success": True, "count": len(rows), "riders": [dict(r) for r in rows]})
+
+    @app.route("/api/database/migrate", methods=["GET", "POST"])
+    def run_database_migrations_endpoint():
+        """Creates all 14 tables in PostgreSQL / Supabase via DATABASE_URL."""
+        result = postgres_migrator.run_migrations()
+        status_code = 200 if result.get("success") else (400 if not result.get("configured") else 500)
+        return jsonify(result), status_code
+
+    @app.route("/api/database/status", methods=["GET"])
+    def database_status_endpoint():
+        """Returns PostgreSQL connection status, table list, and row counts."""
+        status = postgres_migrator.get_database_status_and_tables()
+        return jsonify(status)
 
     @app.route("/api/supabase/users", methods=["GET"])
     def supabase_users_endpoint():
@@ -546,6 +601,21 @@ try:
         if os.path.exists(os.path.join(dist_dir, "index.html")):
             return send_from_directory(dist_dir, "index.html")
         return jsonify({"status": "API Server running. Frontend build pending."})
+
+    def auto_run_postgres_migrations():
+        """Automatically runs schema migrations if DATABASE_URL is configured."""
+        if postgres_migrator.get_database_url():
+            try:
+                print("🔄 [DATABASE_URL detected] Starting automatic schema migrations for 14 tables...")
+                res = postgres_migrator.run_migrations()
+                if res.get("success"):
+                    print(f"✅ [Postgres Migrations] {res.get('message')}")
+                else:
+                    print(f"⚠️ [Postgres Migrations] {res.get('error')}")
+            except Exception as e:
+                print(f"⚠️ [Postgres Migrations Exception] {e}")
+
+    threading.Thread(target=auto_run_postgres_migrations, daemon=True).start()
 
     # Start the background bot automatically when the WSGI/Flask module is loaded
     start_background_bot()

@@ -135,9 +135,119 @@ def init_db(db_path=None):
     );
     """)
 
+    # 1. Vendors table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS vendors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shop_name TEXT NOT NULL,
+        owner_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        email TEXT DEFAULT '',
+        address TEXT DEFAULT '',
+        commission_pct REAL DEFAULT 10.0,
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 2. Riders table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS riders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        vehicle_type TEXT DEFAULT 'Motorbike',
+        license_number TEXT DEFAULT '',
+        rating REAL DEFAULT 5.0,
+        status TEXT DEFAULT 'available',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 3. Customers table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id TEXT DEFAULT '',
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        address TEXT DEFAULT '',
+        total_orders INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 4. Categories table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE,
+        icon TEXT DEFAULT '🛍️'
+    );
+    """)
+
+    # 5. Products table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vendor_id INTEGER DEFAULT 1,
+        title TEXT NOT NULL,
+        category TEXT DEFAULT 'General',
+        price REAL NOT NULL,
+        stock INTEGER DEFAULT 100,
+        image_url TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 6. Delivery Tracking table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS delivery_tracking (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        rider_id INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'assigned',
+        current_location TEXT DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 7. Payments table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        transaction_id TEXT UNIQUE,
+        payment_method TEXT DEFAULT 'Cash on Delivery',
+        amount REAL NOT NULL,
+        status TEXT DEFAULT 'completed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Seed sample vendors and riders if empty
+    cursor.execute("SELECT COUNT(*) as count FROM vendors")
+    if cursor.fetchone()["count"] == 0:
+        cursor.execute("""
+        INSERT INTO vendors (shop_name, owner_name, phone, address, commission_pct, status) VALUES
+        ('Dhaka Gadget Hub', 'Rahim Uddin', '+8801711001122', 'Mirpur-10, Dhaka', 8.5, 'active'),
+        ('Green Fresh Grocery', 'Karim Mia', '+8801811223344', 'Uttara Sector-7, Dhaka', 5.0, 'active'),
+        ('Fashion Fusion BD', 'Nusrat Jahan', '+8801911334455', 'Dhanmondi 27, Dhaka', 10.0, 'active');
+        """)
+
+    cursor.execute("SELECT COUNT(*) as count FROM riders")
+    if cursor.fetchone()["count"] == 0:
+        cursor.execute("""
+        INSERT INTO riders (name, phone, vehicle_type, license_number, rating, status) VALUES
+        ('Tariqul Islam', '+8801611009988', 'Motorbike', 'DH-MET-54321', 4.9, 'available'),
+        ('Shakil Ahmed', '+8801511223344', 'Bicycle', 'DH-CYC-12345', 4.8, 'on_delivery'),
+        ('Mahmudul Hasan', '+8801711998877', 'Motorbike', 'DH-MET-98765', 5.0, 'available');
+        """)
+
     conn.commit()
     conn.close()
-    print(f"✅ Database initialized successfully at {get_resolved_db_path(db_path)}")
+    print(f"✅ Database initialized with 10 tables successfully at {get_resolved_db_path(db_path)}")
 
 def get_user_session(user_id, db_path=None):
     """Gets the active bot conversation session for a Telegram user."""
