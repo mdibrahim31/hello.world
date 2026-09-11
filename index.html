@@ -846,13 +846,30 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000, debug=False, use_reloader=False)
 `,
 
-      "database.py": `# SQLite Database Storage for Orders
+      "database.py": `# SQLite Database Storage for Orders with Cloud-Safe Directory Creation
 import sqlite3, os, datetime
 
-DB_FILE = os.getenv("DATABASE_FILE", "orders.db")
+def get_db_path():
+    raw_path = os.getenv("DATABASE_FILE", "orders.db")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    target = os.path.abspath(raw_path) if os.path.isabs(raw_path) else os.path.abspath(os.path.join(base_dir, raw_path))
+    parent = os.path.dirname(target)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    return target
+
+def get_connection():
+    path = get_db_path()
+    conn = sqlite3.connect(path, timeout=30.0, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+    except Exception:
+        pass
+    return conn
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS orders (
@@ -878,7 +895,7 @@ def init_db():
 def create_order(customer_name, phone_number, product_name, quantity=1, unit_price=0.0, total_price=0.0, notes='', is_telegram_webapp=0, telegram_user_id='', telegram_username=''):
     init_db()
     order_ref = f"ORD-{datetime.datetime.now().strftime('%H%M%S')}"
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO orders (order_number, customer_name, phone_number, product_name, quantity, unit_price, total_price, notes, is_telegram_webapp, telegram_user_id, telegram_username)

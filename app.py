@@ -167,8 +167,11 @@ def send_telegram_alert(order, bot_token=None, chat_id=None):
     except Exception as e:
         return {"success": False, "error": str(e), "preview_message": format_telegram_alert(order)}
 
-# Initialize database tables on startup
-database.init_db()
+# Initialize database tables on startup safely
+try:
+    database.init_db()
+except Exception as _init_err:
+    print(f"⚠️ [app.py] Database initialization warning: {_init_err}")
 
 # Check if Flask is installed; if yes, define Flask app
 try:

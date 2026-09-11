@@ -1,6 +1,6 @@
 """
 Database module for E-Commerce Order System
-Supports SQLite with persistent storage and optional Supabase / PostgreSQL schema compatibility.
+Supports SQLite with persistent storage and automatic path resolution for cloud hosts like Render.
 """
 import sqlite3
 import os
@@ -8,11 +8,84 @@ import sys
 import json
 from datetime import datetime
 
-DB_FILE = os.getenv("DATABASE_FILE", "orders.db")
+def get_resolved_db_path(db_path=None):
+    """
+    Safely resolves the SQLite database path:
+    1. Reads provided path or DATABASE_FILE environment variable (default: 'orders.db').
+    2. If relative, anchors to the directory of this script (current app directory).
+    3. Automatically creates any missing parent directories via os.makedirs(..., exist_ok=True).
+    4. If the directory cannot be created or is not writable, safely falls back to
+       the current working directory or system temp directory (e.g. /tmp/orders.db).
+    """
+    raw_path = db_path or os.getenv("DATABASE_FILE", "orders.db")
+    if not raw_path or not isinstance(raw_path, str):
+        raw_path = "orders.db"
+    raw_path = raw_path.strip()
+
+    # Determine base directory of the project
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Check if absolute or relative
+    if os.path.isabs(raw_path):
+        target_path = os.path.abspath(raw_path)
+    else:
+        target_path = os.path.abspath(os.path.join(base_dir, raw_path))
+
+    # Ensure parent directory exists
+    parent_dir = os.path.dirname(target_path)
+    if parent_dir:
+        try:
+            os.makedirs(parent_dir, exist_ok=True)
+        except Exception as err:
+            print(f"⚠️ [database] Unable to create directory '{parent_dir}': {err}. Falling back to app directory.")
+            target_path = os.path.abspath(os.path.join(base_dir, "orders.db"))
+            try:
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            except Exception:
+                pass
+
+    return target_path
 
 def get_db_connection(db_path=None):
-    path = db_path or DB_FILE
-    conn = sqlite3.connect(path)
+    """
+    Connects to SQLite with:
+    - Path safety and directory creation (os.makedirs)
+    - WAL journal mode for concurrent reads/writes between Flask and Telegram Bot
+    - timeout=30.0 to prevent 'database is locked' errors
+    - Multi-stage fallbacks to app directory or tempdir if cloud volume is inaccessible
+    """
+    path = get_resolved_db_path(db_path)
+
+    # Attempt 1: Standard resolved path
+    try:
+        conn = sqlite3.connect(path, timeout=30.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
+        except Exception:
+            pass
+        return conn
+    except sqlite3.OperationalError as e:
+        print(f"⚠️ [database] OperationalError connecting to {path}: {e}")
+
+    # Attempt 2: Local directory fallback ('orders.db' in script folder)
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        local_path = os.path.join(base_dir, "orders.db")
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        conn = sqlite3.connect(local_path, timeout=30.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        print(f"✅ [database] Connected using local app directory fallback: {local_path}")
+        return conn
+    except Exception as err2:
+        print(f"⚠️ [database] Local directory fallback failed: {err2}")
+
+    # Attempt 3: Temporary directory fallback (always writable on Linux/Render)
+    import tempfile
+    tmp_path = os.path.join(tempfile.gettempdir(), "orders.db")
+    print(f"⚠️ [database] Connecting to temp directory fallback: {tmp_path}")
+    conn = sqlite3.connect(tmp_path, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -41,7 +114,7 @@ def init_db(db_path=None):
     """)
     conn.commit()
     conn.close()
-    print(f"Database initialized successfully at {db_path or DB_FILE}")
+    print(f"✅ Database initialized successfully at {get_resolved_db_path(db_path)}")
 
 def create_order(customer_name, phone_number, product_name, quantity, 
                  unit_price=0.0, total_price=0.0, notes='', 

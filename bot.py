@@ -397,6 +397,12 @@ def run_urllib_fallback():
             time.sleep(3)
 
 def main():
+    # Ensure database schema is initialized and directories exist
+    try:
+        database.init_db()
+    except Exception as db_err:
+        print(f"⚠️ [bot.py] database init notice: {db_err}")
+
     if not TELEGRAM_BOT_TOKEN:
         print("⚠️ Warning: TELEGRAM_BOT_TOKEN is not set.")
         print("Please configure TELEGRAM_BOT_TOKEN to connect your Telegram Bot.")
