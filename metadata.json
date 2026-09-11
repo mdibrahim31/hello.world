@@ -1,6 +1,6 @@
 {
   "name": "Telegram E-Commerce Order System",
-  "description": "Mobile-responsive Telegram Mini App & Web Storefront with SQLite order tracking and automated Telegram Bot alert notifications.",
+  "description": "Mobile-responsive Telegram Mini App & Web Storefront with SQLite order tracking, Supabase image storage & search, and automated Telegram Bot alert notifications.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

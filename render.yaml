@@ -13,3 +13,7 @@ services:
         sync: false
       - key: DATABASE_FILE
         value: orders.db
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false

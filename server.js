@@ -61,6 +61,29 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Supabase Status check
+  if (url.pathname === '/api/supabase/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      configured: true,
+      bucket_name: "user-images",
+      table: "users",
+      schema_fields: ["id", "name", "phone", "image_name", "image_url", "created_at"]
+    }));
+    return;
+  }
+
+  // Supabase Users list / search
+  if (url.pathname === '/api/supabase/users') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      success: true,
+      count: 0,
+      users: []
+    }));
+    return;
+  }
+
   // Serve index.html for all other routes
   const filePath = path.join(__dirname, 'index.html');
   fs.readFile(filePath, (err, data) => {

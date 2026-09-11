@@ -112,9 +112,95 @@ def init_db(db_path=None):
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+
+    # Telegram bot conversation session table (for multi-step flows like Register / Search)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS bot_sessions (
+        user_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT 'idle',
+        data TEXT DEFAULT '{}',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Fallback / mirror table for users (in case Supabase is offline or not yet configured)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS local_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        image_name TEXT NOT NULL,
+        image_url TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     conn.commit()
     conn.close()
     print(f"✅ Database initialized successfully at {get_resolved_db_path(db_path)}")
+
+def get_user_session(user_id, db_path=None):
+    """Gets the active bot conversation session for a Telegram user."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT state, data FROM bot_sessions WHERE user_id = ?", (str(user_id),))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {"state": "idle", "data": {}}
+    try:
+        parsed_data = json.loads(row["data"]) if row["data"] else {}
+    except Exception:
+        parsed_data = {}
+    return {"state": row["state"], "data": parsed_data}
+
+def set_user_session(user_id, state, data=None, db_path=None):
+    """Sets or updates the active bot conversation session for a Telegram user."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    json_data = json.dumps(data or {})
+    cursor.execute("""
+        INSERT INTO bot_sessions (user_id, state, data, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+            state = excluded.state,
+            data = excluded.data,
+            updated_at = CURRENT_TIMESTAMP
+    """, (str(user_id), str(state), json_data))
+    conn.commit()
+    conn.close()
+
+def clear_user_session(user_id, db_path=None):
+    """Resets user session state back to idle."""
+    set_user_session(user_id, "idle", {}, db_path)
+
+def save_local_user(name, phone, image_name, image_url, db_path=None):
+    """Saves user record to local SQLite (mirror / fallback)."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO local_users (name, phone, image_name, image_url)
+        VALUES (?, ?, ?, ?)
+    """, (name.strip(), phone.strip(), image_name.strip(), image_url.strip()))
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": user_id, "name": name, "phone": phone, "image_name": image_name, "image_url": image_url}
+
+def search_local_users(image_name, db_path=None):
+    """Searches local SQLite users by image_name."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    pattern = f"%{image_name.strip()}%"
+    cursor.execute("""
+        SELECT * FROM local_users
+        WHERE image_name LIKE ?
+        ORDER BY id DESC
+    """, (pattern,))
+    rows = cursor.fetchall()
+    users = [dict(r) for r in rows]
+    conn.close()
+    return users
 
 def create_order(customer_name, phone_number, product_name, quantity, 
                  unit_price=0.0, total_price=0.0, notes='', 

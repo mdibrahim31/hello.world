@@ -20,6 +20,8 @@ except ImportError:
     pass
 
 import database
+import supabase_client
+import bot_workflow
 
 # Telegram Bot Credentials
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -305,148 +307,65 @@ try:
     def telegram_webhook():
         """
         Receives Telegram Bot webhook updates.
-        Handles /start, /orders, and /help directly without needing a separate polling process.
+        Delegates to bot_workflow to handle /start (Register / Search / Store),
+        the 4-step registration flow, image upload to Supabase 'user-images' bucket,
+        and image name search.
         """
         if request.method == "GET":
             return jsonify({
                 "status": "Telegram webhook listening",
                 "has_token": bool(TELEGRAM_BOT_TOKEN),
+                "supabase_configured": bool(supabase_client.SUPABASE_URL and supabase_client.SUPABASE_KEY),
                 "instructions": "Send Telegram updates via POST to this endpoint or configure via setWebhook."
             })
 
         update = request.get_json(force=True, silent=True) or {}
-        message = update.get("message") or update.get("edited_message")
-        if not message:
-            return jsonify({"ok": True, "note": "No message in update"})
-
-        chat = message.get("chat", {})
-        chat_id = chat.get("id")
-        user = message.get("from", {})
-        first_name = user.get("first_name", "Customer")
-        username = user.get("username", "")
-        user_id = str(user.get("id", ""))
-        text = message.get("text", "").strip()
+        if not update:
+            return jsonify({"ok": True, "note": "No update in payload"})
 
         token = TELEGRAM_BOT_TOKEN
-        if not token or not chat_id:
-            return jsonify({"ok": False, "error": "Bot token or chat_id missing"}), 400
-
-        base_tg_url = f"https://api.telegram.org/bot{token}"
         web_url = os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://hello-world-fcg3.onrender.com"))
 
-        if text.startswith("/start"):
-            welcome_text = (
-                f"👋 *Welcome to our Storefront, {first_name}!*"
-                + (f" (@{username})" if username else "")
-                + "\n━━━━━━━━━━━━━━━━━━━━━━\n"
-                "🛍️ Browse products, choose quantities, and place your order directly inside Telegram!\n\n"
-                "✨ *How to order:*\n"
-                "1. Tap *'🛍️ Open Store & Place Order'* below to launch the Mini App.\n"
-                "2. Choose your items & enter your delivery phone number.\n"
-                "3. Tap *'Place Order'* — you'll receive real-time status updates!\n\n"
-                "💡 *User Commands:*\n"
-                "• `/start` - Launch storefront Mini App and menu\n"
-                "• `/orders` - View your order history & status\n"
-                "• `/help` - Store guide and customer support\n"
-                "• `/status` - Check your Telegram Chat ID"
-            )
-            reply_payload = {
-                "chat_id": chat_id,
-                "text": welcome_text,
-                "parse_mode": "Markdown",
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [{"text": "🛍️ Open Store & Place Order", "web_app": {"url": web_url}}],
-                        [{"text": "🌐 Open in Web Browser", "url": web_url}]
-                    ]
-                }
-            }
-        elif text.startswith("/orders"):
-            orders = database.get_orders_by_telegram_user(user_id) if user_id else []
-            if not orders:
-                orders_text = f"📦 *No Orders Found for {first_name}*\n\nYou haven't placed any orders yet. Tap below to launch our store and place your first order!"
-            else:
-                lines = [
-                    f"• `{o.get('order_number')}`: *{o.get('product_name')}* (x{o.get('quantity')}) — ${float(o.get('total_price', 0)):.2f} [{o.get('status', 'pending').upper()}]"
-                    for o in orders[:5]
-                ]
-                orders_text = f"📦 *Your Recent Orders:*\n\n" + "\n".join(lines)
+        # Process update with unified bot workflow engine
+        result = bot_workflow.handle_update(update, bot_token=token, web_url=web_url)
+        return jsonify({"ok": True, "result": result})
 
-            reply_payload = {
-                "chat_id": chat_id,
-                "text": orders_text,
-                "parse_mode": "Markdown",
-                "reply_markup": {
-                    "inline_keyboard": [[{"text": "🛍️ Open Store", "web_app": {"url": web_url}}]]
-                }
-            }
-        elif text.startswith("/admin"):
-            all_orders = database.get_all_orders()
-            pending_count = sum(1 for o in all_orders if o.get("status") == "pending")
-            total_rev = sum(float(o.get("total_price", 0)) for o in all_orders)
-            admin_text = (
-                f"👑 *Admin Dashboard Summary*\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 *Total Orders:* `{len(all_orders)}`\n"
-                f"⏳ *Pending Orders:* `{pending_count}`\n"
-                f"💰 *Total Revenue:* `${total_rev:.2f}`\n\n"
-                f"🔗 Tap below to manage all orders and update store settings:"
-            )
-            reply_payload = {
-                "chat_id": chat_id,
-                "text": admin_text,
-                "parse_mode": "Markdown",
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [{"text": "📊 Open Order Manager", "url": web_url}],
-                        [{"text": "🛍️ View Store as Customer", "web_app": {"url": web_url}}]
-                    ]
-                }
-            }
-        elif text.startswith("/help"):
-            reply_payload = {
-                "chat_id": chat_id,
-                "text": (
-                    "ℹ️ *Storefront Bot Help & Guide*\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "• `/start` - Launch storefront Mini App\n"
-                    "• `/orders` - View your order history\n"
-                    "• `/help` - View store guide\n"
-                    "• `/status` - Check your Chat ID\n\n"
-                    f"📍 *Your Chat ID:* `{chat_id}`"
-                ),
-                "parse_mode": "Markdown",
-                "reply_markup": {
-                    "inline_keyboard": [[{"text": "🛍️ Open Store", "web_app": {"url": web_url}}]]
-                }
-            }
-        elif text.startswith("/status"):
-            reply_payload = {
-                "chat_id": chat_id,
-                "text": f"📍 *Your Telegram Chat ID:* `{chat_id}`\n\nUse this Chat ID in TELEGRAM_CHAT_ID to receive alerts!",
-                "parse_mode": "Markdown"
-            }
-        else:
-            # Default response
-            reply_payload = {
-                "chat_id": chat_id,
-                "text": "👋 Welcome! Tap below to open our store and place an order:",
-                "reply_markup": {
-                    "inline_keyboard": [[{"text": "🛍️ Open Store & Place Order", "web_app": {"url": web_url}}]]
-                }
-            }
+    @app.route("/api/supabase/status", methods=["GET"])
+    def supabase_status_endpoint():
+        """Returns the status of Supabase configuration and setup."""
+        has_url = bool(supabase_client.SUPABASE_URL)
+        has_key = bool(supabase_client.SUPABASE_KEY)
+        client = supabase_client.get_supabase_client()
+        return jsonify({
+            "configured": bool(has_url and has_key),
+            "supabase_url": supabase_client.SUPABASE_URL if has_url else None,
+            "has_key": has_key,
+            "bucket_name": supabase_client.BUCKET_NAME,
+            "client_initialized": bool(client is not None),
+            "table": "users",
+            "schema_fields": ["id", "name", "phone", "image_name", "image_url", "created_at"],
+            "sql_migration": supabase_client.get_supabase_sql_migration()
+        })
 
-        try:
-            req = urllib.request.Request(
-                f"{base_tg_url}/sendMessage",
-                data=json.dumps(reply_payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                return jsonify({"ok": True, "result": resp_data})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
+    @app.route("/api/supabase/users", methods=["GET"])
+    def supabase_users_endpoint():
+        """Lists users or searches users by image name from Supabase / fallback."""
+        q = request.args.get("q", "").strip()
+        if q:
+            results = supabase_client.search_users_by_image(q)
+            return jsonify({"success": True, "query": q, "count": len(results), "users": results})
+
+        client = supabase_client.get_supabase_client()
+        if client:
+            try:
+                res = client.table("users").select("*").order("id", desc=True).limit(50).execute()
+                return jsonify({"success": True, "source": "supabase", "count": len(res.data), "users": res.data})
+            except Exception as err:
+                print(f"⚠️ Supabase fetch error: {err}")
+
+        # Local SQLite fallback
+        local_records = database.search_local_users("")
+        return jsonify({"success": True, "source": "local_sqlite", "count": len(local_records), "users": local_records})
 
     @app.route("/api/setup-bot-commands", methods=["GET", "POST"])
     def setup_bot_commands():
@@ -468,10 +387,14 @@ try:
         try:
             cmd_payload = {
                 "commands": [
-                    {"command": "start", "description": "🛍️ Open Store & Place Order"},
+                    {"command": "start", "description": "🚀 Main menu: Register, Search & Store"},
+                    {"command": "register", "description": "📝 Register user profile & upload image"},
+                    {"command": "search", "description": "🔍 Search Supabase by Image Name"},
                     {"command": "orders", "description": "📦 View my recent orders"},
-                    {"command": "help", "description": "ℹ️ Store guide & customer support"},
-                    {"command": "status", "description": "📍 Check chat ID & bot status"}
+                    {"command": "admin", "description": "👑 Admin order summary"},
+                    {"command": "cancel", "description": "❌ Cancel current step"},
+                    {"command": "help", "description": "ℹ️ Bot guide & all commands"},
+                    {"command": "status", "description": "📍 Check chat ID & Supabase status"}
                 ]
             }
             req = urllib.request.Request(
