@@ -380,6 +380,29 @@ try:
                     "inline_keyboard": [[{"text": "🛍️ Open Store", "web_app": {"url": web_url}}]]
                 }
             }
+        elif text.startswith("/admin"):
+            all_orders = database.get_all_orders()
+            pending_count = sum(1 for o in all_orders if o.get("status") == "pending")
+            total_rev = sum(float(o.get("total_price", 0)) for o in all_orders)
+            admin_text = (
+                f"👑 *Admin Dashboard Summary*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 *Total Orders:* `{len(all_orders)}`\n"
+                f"⏳ *Pending Orders:* `{pending_count}`\n"
+                f"💰 *Total Revenue:* `${total_rev:.2f}`\n\n"
+                f"🔗 Tap below to manage all orders and update store settings:"
+            )
+            reply_payload = {
+                "chat_id": chat_id,
+                "text": admin_text,
+                "parse_mode": "Markdown",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [{"text": "📊 Open Order Manager", "url": web_url}],
+                        [{"text": "🛍️ View Store as Customer", "web_app": {"url": web_url}}]
+                    ]
+                }
+            }
         elif text.startswith("/help"):
             reply_payload = {
                 "chat_id": chat_id,
@@ -486,6 +509,50 @@ try:
             "message": "Bot menu commands and /start configuration dispatched to Telegram!",
             "details": results
         })
+
+    @app.route("/api/set-webhook", methods=["GET", "POST"])
+    def configure_webhook():
+        """
+        Configures Telegram Webhook to point directly to Render /api/webhook.
+        This allows 100% instant responses to /start, /orders, /admin even if background bot polling is not running!
+        """
+        token = TELEGRAM_BOT_TOKEN
+        if not token:
+            return jsonify({"success": False, "error": "TELEGRAM_BOT_TOKEN is not configured"}), 400
+
+        data = request.get_json(force=True, silent=True) or {}
+        custom_base = request.args.get("url") or data.get("url")
+        base_url = custom_base or os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://hello-world-fcg3.onrender.com"))
+        webhook_url = f"{base_url.rstrip('/')}/api/webhook"
+
+        try:
+            tg_url = f"https://api.telegram.org/bot{token}/setWebhook?url={webhook_url}&drop_pending_updates=true"
+            req = urllib.request.Request(tg_url)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                res_data = json.loads(r.read().decode("utf-8"))
+            return jsonify({
+                "success": res_data.get("ok", False),
+                "webhook_url": webhook_url,
+                "telegram_response": res_data,
+                "message": f"Webhook configured! Telegram will now forward /start and /admin to {webhook_url}"
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/api/delete-webhook", methods=["GET", "POST"])
+    def remove_webhook():
+        """Deletes any configured webhook to allow long-polling in bot.py."""
+        token = TELEGRAM_BOT_TOKEN
+        if not token:
+            return jsonify({"success": False, "error": "TELEGRAM_BOT_TOKEN is not configured"}), 400
+        try:
+            tg_url = f"https://api.telegram.org/bot{token}/deleteWebhook?drop_pending_updates=true"
+            req = urllib.request.Request(tg_url)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                res_data = json.loads(r.read().decode("utf-8"))
+            return jsonify({"success": True, "telegram_response": res_data})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route("/api/health", methods=["GET"])
     @app.route("/health", methods=["GET"])

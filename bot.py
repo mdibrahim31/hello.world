@@ -176,6 +176,26 @@ def run_ptb_bot():
             parse_mode="Markdown"
         )
 
+    async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.effective_chat.id
+        all_orders = database.get_all_orders()
+        pending_count = sum(1 for o in all_orders if o.get("status") == "pending")
+        total_rev = sum(float(o.get("total_price", 0)) for o in all_orders)
+        admin_text = (
+            f"👑 *Admin Dashboard Summary*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 *Total Orders:* `{len(all_orders)}`\n"
+            f"⏳ *Pending Orders:* `{pending_count}`\n"
+            f"💰 *Total Revenue:* `${total_rev:.2f}`\n\n"
+            f"🔗 Tap below to manage all orders in real-time:"
+        )
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 Open Order Manager", url=WEB_APP_URL)],
+            [InlineKeyboardButton("🛍️ View Storefront", url=WEB_APP_URL)]
+        ])
+        await update.message.reply_text(admin_text, reply_markup=kb, parse_mode="Markdown")
+
     async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
@@ -226,6 +246,7 @@ def run_ptb_bot():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("orders", orders_command))
+    app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
@@ -349,6 +370,34 @@ def run_urllib_fallback():
                             send_req = urllib.request.Request(
                                 f"{base_url}/sendMessage",
                                 data=json.dumps(orders_payload).encode("utf-8"),
+                                headers={"Content-Type": "application/json"}
+                            )
+                            urllib.request.urlopen(send_req, timeout=10)
+                        elif text.startswith("/admin"):
+                            all_orders = database.get_all_orders()
+                            pending_count = sum(1 for o in all_orders if o.get("status") == "pending")
+                            total_rev = sum(float(o.get("total_price", 0)) for o in all_orders)
+                            admin_payload = {
+                                "chat_id": chat_id,
+                                "text": (
+                                    f"👑 *Admin Dashboard Summary*\n"
+                                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                                    f"📊 *Total Orders:* `{len(all_orders)}`\n"
+                                    f"⏳ *Pending Orders:* `{pending_count}`\n"
+                                    f"💰 *Total Revenue:* `${total_rev:.2f}`\n\n"
+                                    f"🔗 Tap below to manage all orders:"
+                                ),
+                                "parse_mode": "Markdown",
+                                "reply_markup": {
+                                    "inline_keyboard": [
+                                        [{"text": "📊 Open Order Manager", "url": WEB_APP_URL}],
+                                        [{"text": "🛍️ Open Storefront", "web_app": {"url": WEB_APP_URL}}]
+                                    ]
+                                }
+                            }
+                            send_req = urllib.request.Request(
+                                f"{base_url}/sendMessage",
+                                data=json.dumps(admin_payload).encode("utf-8"),
                                 headers={"Content-Type": "application/json"}
                             )
                             urllib.request.urlopen(send_req, timeout=10)
