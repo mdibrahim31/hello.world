@@ -449,15 +449,24 @@ try:
         webhook_url = f"{base_url.rstrip('/')}/api/webhook"
 
         try:
-            tg_url = f"https://api.telegram.org/bot{token}/setWebhook?url={webhook_url}&drop_pending_updates=true"
-            req = urllib.request.Request(tg_url)
+            tg_url = f"https://api.telegram.org/bot{token}/setWebhook"
+            wh_payload = {
+                "url": webhook_url,
+                "drop_pending_updates": True,
+                "allowed_updates": ["message", "edited_message", "callback_query", "inline_query"]
+            }
+            req = urllib.request.Request(
+                tg_url,
+                data=json.dumps(wh_payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
             with urllib.request.urlopen(req, timeout=10) as r:
                 res_data = json.loads(r.read().decode("utf-8"))
             return jsonify({
                 "success": res_data.get("ok", False),
                 "webhook_url": webhook_url,
                 "telegram_response": res_data,
-                "message": f"Webhook configured! Telegram will now forward /start and /admin to {webhook_url}"
+                "message": f"Webhook configured! Telegram will now forward messages and button clicks to {webhook_url}"
             })
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
