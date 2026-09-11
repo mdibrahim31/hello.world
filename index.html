@@ -71,22 +71,32 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #94a3b8;
     }
+    /* Modal transitions */
+    .modal-backdrop {
+      transition: opacity 0.2s ease-in-out;
+    }
+    .modal-box {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen antialiased flex flex-col selection:bg-blue-100 selection:text-blue-800">
+<body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-500 selection:text-white min-h-screen flex flex-col">
 
-  <!-- Header Section -->
-  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 transition-shadow duration-200">
-    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+  <!-- Top Navigation Bar -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-sky-500 text-white flex items-center justify-center shadow-xs">
           <i data-lucide="shopping-bag" class="w-5 h-5"></i>
         </div>
         <div>
-          <h1 class="text-base font-bold tracking-tight text-slate-900 leading-tight">
-            Telegram Storefront
-          </h1>
-          <p class="text-xs text-slate-500 font-medium">
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-base leading-tight text-slate-900">Telegram Storefront</h1>
+            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-200/60">
+              Single-File
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-500 hidden sm:block">
             Telegram Mini App + Web Store • Real-Time Telegram Alerts
           </p>
         </div>
@@ -136,58 +146,72 @@
   </header>
 
   <!-- Main Content Container -->
-  <main class="max-w-4xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+  <main class="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-5 pb-16 space-y-5">
 
-    <!-- Top Environment Banner (Auto-detects Telegram WebApp) -->
-    <div id="telegram-banner-container">
-      <!-- Injected via JavaScript based on SDK state -->
-    </div>
+    <!-- Telegram Context Banner (Dynamic) -->
+    <div id="telegram-banner-container"></div>
 
-    <!-- Main Grid: Product Selection + Order Form -->
-    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+    <!-- Main Order Form Section -->
+    <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 sm:p-6 space-y-6">
+      
+      <!-- Section Header -->
+      <div class="border-b border-slate-100 pb-4">
+        <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <i data-lucide="package" class="w-5 h-5 text-blue-600"></i>
+          <span>Place New Order</span>
+        </h2>
+        <p class="text-xs text-slate-500 mt-1">
+          Select your product, enter delivery information, and submit. An automated alert will be dispatched to Telegram.
+        </p>
+      </div>
 
-      <!-- Left Column: Product Selection (5 cols) -->
-      <div class="md:col-span-5 space-y-4">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-bold uppercase tracking-wider text-slate-500">
-            1. Select Product
-          </h2>
-          <span class="text-xs text-slate-400 font-medium">Click to select</span>
-        </div>
-
-        <div id="products-grid" class="space-y-3">
-          <!-- Injected via JavaScript -->
-        </div>
-
-        <!-- Telegram Mini App Info Callout -->
-        <div class="p-3.5 rounded-2xl bg-sky-50 border border-sky-100 text-sky-900 text-xs space-y-1.5">
-          <div class="flex items-center gap-1.5 font-bold text-sky-800">
-            <i data-lucide="info" class="w-4 h-4 text-sky-600"></i>
-            <span>Telegram WebApp Detection</span>
-          </div>
-          <p class="text-slate-600 leading-relaxed">
-            If opened via Telegram Mini App, user details (<code class="text-[11px] bg-white px-1 py-0.5 rounded border border-sky-200">id, username</code>) are automatically extracted, and the native Telegram Main Button is triggered.
-          </p>
+      <!-- Product Selection Grid -->
+      <div class="space-y-3">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">
+          1. Select Product
+        </label>
+        <div id="products-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Populated by JavaScript -->
         </div>
       </div>
 
-      <!-- Right Column: Order Form (7 cols) -->
-      <div class="md:col-span-7">
-        <div class="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 space-y-5">
-          <div class="border-b border-slate-100 pb-4">
-            <h2 class="text-base font-bold text-slate-900">
-              2. Complete Order Details
-            </h2>
-            <p class="text-xs text-slate-500 mt-0.5">
-              Enter recipient contact and quantity. Orders post to Render backend and Telegram immediately.
-            </p>
-          </div>
+      <!-- Quantity Stepper -->
+      <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-800">2. Order Quantity</label>
+          <p class="text-[11px] text-slate-500">Adjust the number of units to purchase</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            id="btn-qty-minus"
+            onclick="changeQuantity(-1)"
+            class="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-slate-700 text-lg shadow-2xs transition-all cursor-pointer"
+          >
+            -
+          </button>
+          <span id="display-quantity" class="font-bold text-base text-slate-900 w-8 text-center">1</span>
+          <button
+            type="button"
+            id="btn-qty-plus"
+            onclick="changeQuantity(1)"
+            class="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-slate-700 text-lg shadow-2xs transition-all cursor-pointer"
+          >
+            +
+          </button>
+        </div>
+      </div>
 
-          <form id="order-form" onsubmit="handleFormSubmit(event)" class="space-y-4">
-            <!-- Customer Name -->
+      <!-- Customer Details Form -->
+      <form id="order-form" onsubmit="handleFormSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+            3. Customer Information
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label for="input-customer-name" class="block text-xs font-semibold text-slate-700 mb-1.5">
-                Customer Name <span class="text-rose-500">*</span>
+              <label for="input-customer-name" class="block text-[11px] font-semibold text-slate-600 mb-1">
+                Full Name <span class="text-rose-500">*</span>
               </label>
               <div class="relative">
                 <i data-lucide="user" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
@@ -195,15 +219,14 @@
                   type="text"
                   id="input-customer-name"
                   required
-                  placeholder="e.g. Alex Johnson"
-                  class="w-full pl-9 pr-3 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  placeholder="e.g. Alex Morgan"
+                  class="w-full pl-9 pr-3 py-2.5 bg-slate-50/50 rounded-xl border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
                 />
               </div>
             </div>
 
-            <!-- Phone Number -->
             <div>
-              <label for="input-phone-number" class="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label for="input-phone-number" class="block text-[11px] font-semibold text-slate-600 mb-1">
                 Phone Number <span class="text-rose-500">*</span>
               </label>
               <div class="relative">
@@ -212,92 +235,121 @@
                   type="tel"
                   id="input-phone-number"
                   required
-                  placeholder="e.g. +1 555 234 5678"
-                  class="w-full pl-9 pr-3 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  placeholder="e.g. +1 (555) 019-2834"
+                  class="w-full pl-9 pr-3 py-2.5 bg-slate-50/50 rounded-xl border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
                 />
               </div>
             </div>
-
-            <!-- Selected Product Summary Bar & Quantity Selector -->
-            <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
-              <div class="flex items-center justify-between">
-                <div>
-                  <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Item</span>
-                  <p id="summary-product-name" class="font-bold text-slate-800 text-xs">-</p>
-                </div>
-                <div class="text-right">
-                  <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unit Price</span>
-                  <p id="summary-unit-price" class="font-semibold text-slate-700 text-xs">$0.00</p>
-                </div>
-              </div>
-
-              <div class="flex items-center justify-between border-t border-slate-200/60 pt-3">
-                <span class="text-xs font-semibold text-slate-700">Quantity</span>
-                <div class="flex items-center gap-2 bg-white rounded-lg border border-slate-200 p-1 shadow-2xs">
-                  <button
-                    type="button"
-                    onclick="adjustQuantity(-1)"
-                    class="w-7 h-7 rounded-md bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer font-bold"
-                  >
-                    -
-                  </button>
-                  <span id="quantity-display" class="w-8 text-center font-bold text-xs text-slate-800">1</span>
-                  <button
-                    type="button"
-                    onclick="adjustQuantity(1)"
-                    class="w-7 h-7 rounded-md bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer font-bold"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Optional Delivery Notes -->
-            <div>
-              <label for="input-order-notes" class="block text-xs font-semibold text-slate-700 mb-1.5">
-                Delivery Notes (Optional)
-              </label>
-              <textarea
-                id="input-order-notes"
-                rows="2"
-                placeholder="Special delivery instructions or gate code..."
-                class="w-full px-3 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
-              ></textarea>
-            </div>
-
-            <!-- Order Total & Submit Button -->
-            <div class="pt-2 border-t border-slate-100 space-y-3">
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-slate-500 font-medium">Subtotal (<span id="summary-quantity">1 pcs</span>):</span>
-                <span id="summary-total-price" class="text-base font-extrabold text-blue-600">$0.00</span>
-              </div>
-
-              <button
-                type="submit"
-                id="btn-submit-order"
-                class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md shadow-blue-500/15 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <i data-lucide="send" class="w-4 h-4"></i>
-                <span id="submit-btn-text">Place Order</span>
-              </button>
-
-              <div class="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
-                <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-500"></i>
-                <span>Direct Render API • Real-Time Telegram Alerts</span>
-              </div>
-            </div>
-          </form>
+          </div>
         </div>
+
+        <div>
+          <label for="input-order-notes" class="block text-[11px] font-semibold text-slate-600 mb-1">
+            Delivery Notes / Special Instructions <span class="text-slate-400 font-normal">(Optional)</span>
+          </label>
+          <div class="relative">
+            <i data-lucide="file-text" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+            <textarea
+              id="input-order-notes"
+              rows="2"
+              placeholder="e.g. Please leave package with building reception or call upon arrival"
+              class="w-full pl-9 pr-3 py-2.5 bg-slate-50/50 rounded-xl border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+            ></textarea>
+          </div>
+        </div>
+
+        <!-- Live Order Summary Box -->
+        <div class="p-4 rounded-xl bg-gradient-to-br from-slate-50 to-blue-50/40 border border-blue-100/80 space-y-2.5 text-xs">
+          <div class="flex items-center justify-between text-slate-600 font-medium">
+            <span>Selected Item</span>
+            <span id="summary-product-name" class="font-semibold text-slate-800">Wireless Noise-Cancelling Earbuds</span>
+          </div>
+          <div class="flex items-center justify-between text-slate-600">
+            <span>Unit Price</span>
+            <span id="summary-unit-price">$49.99</span>
+          </div>
+          <div class="flex items-center justify-between text-slate-600">
+            <span>Quantity</span>
+            <span id="summary-quantity">1 pcs</span>
+          </div>
+          <div class="flex items-center justify-between text-slate-600">
+            <span>Shipping</span>
+            <span class="text-emerald-600 font-bold">FREE Delivery</span>
+          </div>
+          <div class="border-t border-slate-200/80 pt-2 flex items-center justify-between text-sm font-bold text-slate-900">
+            <span>Total Payable</span>
+            <span id="summary-total-price" class="text-blue-600 text-base">$49.99</span>
+          </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button
+          type="submit"
+          id="btn-submit-order"
+          class="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <i data-lucide="send" class="w-4 h-4"></i>
+          <span id="submit-btn-text">Submit Order • $49.99</span>
+        </button>
+      </form>
+    </section>
+
+    <!-- Architecture & Features Highlights -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+      <div class="p-3.5 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
+        <div class="text-blue-600 font-bold text-xs flex items-center gap-1.5 mb-1">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5"></i> Telegram Mini App SDK
+        </div>
+        <p class="text-[11px] text-slate-500 leading-relaxed">
+          Auto-detects Telegram client context, themes, and pre-populates user profiles with native MainButton support.
+        </p>
+      </div>
+
+      <div class="p-3.5 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
+        <div class="text-emerald-600 font-bold text-xs flex items-center gap-1.5 mb-1">
+          <i data-lucide="hard-drive" class="w-3.5 h-3.5"></i> Zero Build GitHub Pages
+        </div>
+        <p class="text-[11px] text-slate-500 leading-relaxed">
+          100% self-contained single-file HTML app. Runs directly in any web browser without Vite, npm, or build setup.
+        </p>
+      </div>
+
+      <div class="p-3.5 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
+        <div class="text-indigo-600 font-bold text-xs flex items-center gap-1.5 mb-1">
+          <i data-lucide="bell" class="w-3.5 h-3.5"></i> Real-Time Bot Alerts
+        </div>
+        <p class="text-[11px] text-slate-500 leading-relaxed">
+          Instantly dispatches formatted markdown order alerts directly to your Telegram bot or channel via Telegram API.
+        </p>
       </div>
     </div>
   </main>
 
-  <!-- Modals & Overlays -->
+  <!-- Footer -->
+  <footer class="border-t border-slate-200/80 bg-white py-5 text-center text-xs text-slate-400">
+    <div class="max-w-3xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-slate-600">Telegram E-Commerce WebApp</span>
+        <span>•</span>
+        <span>Pure HTML/CSS/JS</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="openBotModal()" class="hover:text-blue-600 transition-colors cursor-pointer">
+          Python Bot Backend
+        </button>
+        <span>•</span>
+        <button onclick="openOrdersModal()" class="hover:text-blue-600 transition-colors cursor-pointer">
+          Order Records
+        </button>
+      </div>
+    </div>
+  </footer>
 
-  <!-- 1. Order Success & Telegram Alert Receipt Modal -->
+  <!-- ================= MODALS ================= -->
+
+  <!-- 1. Order Success Receipt Modal -->
   <div id="modal-order-success" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
-    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-200">
       <div class="text-center space-y-2">
         <div class="w-14 h-14 mx-auto rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
           <i data-lucide="check-circle-2" class="w-8 h-8"></i>
@@ -416,26 +468,27 @@
         <!-- Rendered via JS -->
       </div>
 
-      <!-- Footer Stats -->
-      <div class="border-t border-slate-100 pt-3 flex items-center justify-between text-xs text-slate-500">
-        <div>Total Orders: <span id="orders-total-count" class="font-bold text-slate-800">0</span></div>
-        <div>Total Revenue: <span id="orders-total-revenue" class="font-bold text-blue-600">$0.00</span></div>
+      <div class="border-t border-slate-100 pt-3 flex justify-between items-center text-xs text-slate-500">
+        <span id="orders-modal-footer-count">Total Orders: 0</span>
+        <button onclick="closeOrdersModal()" class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg cursor-pointer">
+          Done
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- 3. Bot & Backend Setup Modal -->
+  <!-- 3. Bot & Deployment Modal -->
   <div id="modal-bot-setup" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
-    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[92vh] flex flex-col">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
-            <i data-lucide="bot" class="w-4 h-4"></i>
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+            <i data-lucide="bot" class="w-5 h-5"></i>
           </div>
           <div>
-            <h3 class="text-base font-bold text-slate-900">Telegram Bot & Alert Configuration</h3>
-            <p class="text-[11px] text-slate-500">Connect to your Telegram Bot to receive live alerts on new orders</p>
+            <h3 class="text-lg font-bold text-slate-900">Telegram Bot & Alert Integration</h3>
+            <p class="text-xs text-slate-500">Configure bot credentials for live alerts & copy Python deployment files</p>
           </div>
         </div>
         <button onclick="closeBotModal()" class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
@@ -443,14 +496,14 @@
         </button>
       </div>
 
-      <!-- Quick Step-by-Step Guide -->
-      <div class="space-y-4 text-xs">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div class="flex-1 overflow-y-auto pr-1 space-y-4 text-xs">
+        <!-- 3-Step Guide -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <div class="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
             <span class="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center mb-1.5">1</span>
             <h4 class="font-bold text-slate-800">Create Bot</h4>
             <p class="text-[11px] text-slate-500 mt-1">
-              Open Telegram and search for <a href="https://t.me/BotFather" target="_blank" class="text-blue-600 underline font-semibold">@BotFather</a>. Type <code class="bg-white px-1 py-0.5 rounded border border-slate-200">/newbot</code> and copy your HTTP API token.
+              Talk to <strong>@BotFather</strong> in Telegram, send <code class="bg-white px-1 py-0.5 rounded border border-slate-200">/newbot</code> to get your Bot Token.
             </p>
           </div>
 
@@ -557,59 +610,141 @@
           <div id="test-ping-result-box" class="hidden p-3 rounded-lg border text-xs leading-relaxed"></div>
         </div>
 
+        <!-- Telegram Bot /start Command & User Menu Section -->
+        <div class="bg-indigo-50/70 p-4 rounded-xl border border-indigo-200/80 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-slate-800 flex items-center gap-1.5 text-xs sm:text-sm">
+              <i data-lucide="bot" class="w-4 h-4 text-indigo-600"></i>
+              <span>Bot /start Command for Users</span>
+            </h4>
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200">
+              Interactive Mini App
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-600 leading-relaxed">
+            When users message your bot with <code class="px-1 py-0.5 bg-indigo-100/70 text-indigo-900 rounded font-semibold">/start</code> or tap the bottom Menu button, the bot greets them and presents the <strong>Open Store & Place Order</strong> button to launch this Mini App.
+          </p>
+
+          <!-- Interactive Preview Card of the /start Response -->
+          <div class="bg-slate-900 rounded-xl p-3 text-slate-100 text-[11px] font-mono border border-slate-700/60 space-y-2">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 text-[10px] text-slate-400">
+              <span>Customer Prompt: <strong>/start</strong></span>
+              <span class="text-emerald-400 font-semibold">● Bot Replies</span>
+            </div>
+            <div class="text-xs text-white font-sans font-semibold">
+              👋 Welcome to our Storefront, <span class="text-indigo-300">Customer</span>!
+            </div>
+            <div class="text-[11px] text-slate-300 font-sans leading-relaxed">
+              Browse products, choose quantities, and place your order directly inside Telegram with real-time status updates!
+            </div>
+            <!-- Simulated Telegram Inline Buttons -->
+            <div class="grid grid-cols-1 gap-1.5 pt-1">
+              <div class="bg-blue-600 text-white font-sans text-xs py-1.5 px-3 rounded-lg text-center font-semibold shadow-sm flex items-center justify-center gap-1.5">
+                <span>🛍️ Open Store & Place Order</span>
+                <span class="text-[9px] bg-blue-700/90 px-1.5 py-0.5 rounded text-blue-100 uppercase tracking-wide">Mini App</span>
+              </div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <div class="bg-slate-800 text-slate-300 font-sans text-[11px] py-1 px-2 rounded-lg text-center font-medium">
+                  📦 My Orders (/orders)
+                </div>
+                <div class="bg-slate-800 text-slate-300 font-sans text-[11px] py-1 px-2 rounded-lg text-center font-medium">
+                  ℹ️ Help & Guide (/help)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action buttons for /start command setup and testing -->
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              id="btn-test-start-command"
+              onclick="testStartCommand()"
+              class="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+              <span>Send Test /start Card</span>
+            </button>
+            <button
+              type="button"
+              id="btn-register-bot-commands"
+              onclick="registerBotCommands()"
+              class="py-1.5 px-3 bg-white hover:bg-slate-100 text-indigo-900 border border-indigo-200 font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+              <span>Register /start Menu on Telegram</span>
+            </button>
+          </div>
+          <div id="start-cmd-result-box" class="hidden p-2.5 rounded-lg border text-xs leading-relaxed"></div>
+        </div>
+
         <!-- Python Backend & Deployment Files View -->
         <div class="space-y-2 pt-1">
           <div class="flex items-center justify-between">
-            <h4 class="font-bold text-slate-800">Python Backend & Deployment Files</h4>
-            <div class="flex gap-1" id="snippet-tabs">
-              <button onclick="selectSnippetTab('app.py')" id="tab-app.py" class="px-2.5 py-1 font-mono text-[11px] font-semibold border-b-2 border-blue-600 text-blue-600 cursor-pointer">app.py</button>
-              <button onclick="selectSnippetTab('database.py')" id="tab-database.py" class="px-2.5 py-1 font-mono text-[11px] font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer">database.py</button>
-              <button onclick="selectSnippetTab('bot.py')" id="tab-bot.py" class="px-2.5 py-1 font-mono text-[11px] font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer">bot.py</button>
-              <button onclick="selectSnippetTab('render.yaml')" id="tab-render.yaml" class="px-2.5 py-1 font-mono text-[11px] font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer">render.yaml</button>
-            </div>
-          </div>
-          <div class="relative">
-            <pre id="code-snippet-pre" class="p-3 bg-slate-900 text-slate-100 rounded-xl font-mono text-[11px] overflow-x-auto max-h-56 leading-relaxed"></pre>
+            <h4 class="font-bold text-slate-800 flex items-center gap-1.5">
+              <i data-lucide="file-code" class="w-4 h-4 text-blue-600"></i>
+              <span>Python Backend & Deployment Files</span>
+            </h4>
             <button
               type="button"
-              onclick="copyCurrentSnippet()"
-              class="absolute top-2.5 right-2.5 px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-medium backdrop-blur-xs flex items-center gap-1 cursor-pointer transition-colors"
+              onclick="copyActiveSnippet()"
+              id="btn-copy-code"
+              class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold cursor-pointer text-xs"
             >
-              <i data-lucide="copy" class="w-3 h-3"></i> Copy File
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span id="copy-code-text">Copy Code</span>
             </button>
           </div>
+
+          <!-- Tabs -->
+          <div class="flex border-b border-slate-200 gap-1 overflow-x-auto" id="snippet-tabs">
+            <button onclick="selectSnippetTab('app.py')" id="tab-app.py" class="px-3 py-1.5 font-mono text-xs font-semibold border-b-2 border-blue-600 text-blue-600 cursor-pointer">app.py</button>
+            <button onclick="selectSnippetTab('database.py')" id="tab-database.py" class="px-3 py-1.5 font-mono text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer">database.py</button>
+            <button onclick="selectSnippetTab('bot.py')" id="tab-bot.py" class="px-3 py-1.5 font-mono text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer">bot.py</button>
+            <button onclick="selectSnippetTab('requirements.txt')" id="tab-requirements.txt" class="px-3 py-1.5 font-mono text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer">requirements.txt</button>
+            <button onclick="selectSnippetTab('render.yaml')" id="tab-render.yaml" class="px-3 py-1.5 font-mono text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer">render.yaml</button>
+          </div>
+
+          <!-- Code Display -->
+          <pre id="code-snippet-pre" class="bg-slate-900 text-slate-200 font-mono text-[11px] p-3.5 rounded-xl overflow-x-auto max-h-48 leading-relaxed selection:bg-blue-500 selection:text-white"></pre>
         </div>
+      </div>
+
+      <div class="border-t border-slate-100 pt-3 flex justify-end">
+        <button onclick="closeBotModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-xl cursor-pointer">
+          Done
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- Toast Notification element -->
-  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 pointer-events-none space-y-2"></div>
 
-  <!-- Application Logic (Vanilla JS, 0 external build steps) -->
+  <!-- ================= JAVASCRIPT APPLICATION LOGIC ================= -->
   <script>
-    /* Catalog Data */
+    /* Products Catalog */
     const PRODUCTS = [
       {
         id: "prod-1",
-        name: "Minimalist Wireless Earbuds",
-        category: "Audio & Wearables",
+        name: "Wireless Noise-Cancelling Earbuds",
+        category: "Audio",
         price: 49.99,
         image: "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=300&auto=format&fit=crop&q=80",
         badge: "Best Seller"
       },
       {
         id: "prod-2",
-        name: "Smart Fitness Watch Gen 4",
-        category: "Gadgets",
+        name: "Vintage Mechanical Keyboard RGB",
+        category: "Workplace",
         price: 89.50,
-        image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=300&auto=format&fit=crop&q=80",
+        image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=300&auto=format&fit=crop&q=80",
         badge: "Popular"
       },
       {
         id: "prod-3",
-        name: "Mechanical Compact Keyboard",
-        category: "Workspace",
+        name: "Smart Fitness Tracker Band",
+        category: "Wearables",
         price: 34.99,
         image: "https://images.unsplash.com/photo-1575311373937-040b8e1fd5b6?w=300&auto=format&fit=crop&q=80",
         badge: "New Arrival"
@@ -626,7 +761,7 @@
 
     /* Python & Config Snippets */
     const CODE_SNIPPETS = {
-      "app.py": `# Flask API Server for E-Commerce Orders with Telegram Alerting
+      "app.py": `# Flask API Server for E-Commerce Orders & Telegram Webhook
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os, json, urllib.request
@@ -637,13 +772,14 @@ CORS(app)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://hello-world-fcg3.onrender.com")
 
 @app.route("/api/orders", methods=["GET", "POST"])
 @app.route("/api/order", methods=["POST"])
-def place_order():
+def orders_endpoint():
     if request.method == "GET":
         return jsonify({"success": True, "orders": database.get_all_orders()})
-
+    
     data = request.json or {}
     order = database.create_order(
         customer_name=data["customer_name"],
@@ -653,17 +789,19 @@ def place_order():
         unit_price=data.get("unit_price", 0.0),
         total_price=data.get("total_price", 0.0),
         notes=data.get("notes", ""),
-        is_telegram_webapp=1 if data.get("is_telegram_webapp") else 0
+        is_telegram_webapp=1 if data.get("is_telegram_webapp") else 0,
+        telegram_user_id=str(data.get("telegram_user_id", "")),
+        telegram_username=str(data.get("telegram_username", ""))
     )
     
-    # Send Telegram Bot Alert
+    # Broadcast Telegram Bot Alert
     alert_text = (
-        f"🛒 *New Order Alert!*\\n"
-        f"🔖 Ref: {order.get('order_number')}\\n"
-        f"👤 Name: {order.get('customer_name')}\\n"
-        f"📞 Phone: {order.get('phone_number')}\\n"
-        f"📦 Item: {order.get('product_name')} x {order.get('quantity')}\\n"
-        f"💰 Total: \${order.get('total_price', 0.0):.2f}"
+        f"🛒 *NEW ORDER RECEIVED!*\\n"
+        f"🔖 *Ref:* \`{order.get('order_number')}\`\\n"
+        f"👤 *Customer:* {order.get('customer_name')}\\n"
+        f"📞 *Phone:* \`{order.get('phone_number')}\`\\n"
+        f"📦 *Item:* *{order.get('product_name')}* (x{order.get('quantity')})\\n"
+        f"💰 *Total:* \${order.get('total_price', 0.0):.2f}"
     )
     
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
@@ -676,9 +814,37 @@ def place_order():
             )
             urllib.request.urlopen(req, timeout=10)
         except Exception as e:
-            print("Telegram dispatch error:", e)
+            print("Telegram alert error:", e)
         
     return jsonify({"success": True, "order": order}), 201
+
+# Webhook endpoint to respond to user /start directly
+@app.route("/api/webhook", methods=["POST"])
+def telegram_webhook():
+    update = request.json or {}
+    message = update.get("message", {})
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "")
+    user = message.get("from", {})
+    name = user.get("first_name", "Customer")
+    
+    if text.startswith("/start"):
+        payload = {
+            "chat_id": chat_id,
+            "text": f"👋 *Welcome, {name}!*\\nTap below to browse items and place orders directly in Telegram:",
+            "parse_mode": "Markdown",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [{"text": "🛍️ Open Store & Place Order", "web_app": {"url": WEB_APP_URL}}],
+                    [{"text": "🌐 Open in Web Browser", "url": WEB_APP_URL}]
+                ]
+            }
+        }
+        req = urllib.request.Request(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                     data=json.dumps(payload).encode('utf-8'),
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+    return jsonify({"ok": True})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)
@@ -702,47 +868,131 @@ def init_db():
         quantity INTEGER DEFAULT 1,
         unit_price REAL DEFAULT 0.0,
         total_price REAL DEFAULT 0.0,
-        notes TEXT,
+        notes TEXT DEFAULT '',
         status TEXT DEFAULT 'pending',
         is_telegram_webapp INTEGER DEFAULT 0,
+        telegram_user_id TEXT DEFAULT '',
+        telegram_username TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
+    );
     """)
     conn.commit()
     conn.close()
 
-init_db()
+def create_order(customer_name, phone_number, product_name, quantity=1, unit_price=0.0, total_price=0.0, notes='', is_telegram_webapp=0, telegram_user_id='', telegram_username=''):
+    init_db()
+    order_ref = f"ORD-{datetime.datetime.now().strftime('%H%M%S')}"
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO orders (order_number, customer_name, phone_number, product_name, quantity, unit_price, total_price, notes, is_telegram_webapp, telegram_user_id, telegram_username)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (order_ref, customer_name, phone_number, product_name, quantity, unit_price, total_price, notes, is_telegram_webapp, telegram_user_id, telegram_username))
+    order_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {
+        "id": order_id,
+        "order_number": order_ref,
+        "customer_name": customer_name,
+        "phone_number": phone_number,
+        "product_name": product_name,
+        "quantity": quantity,
+        "unit_price": unit_price,
+        "total_price": total_price,
+        "notes": notes,
+        "status": "pending"
+    }
 `,
 
-      "bot.py": `# Python Telegram Bot with WebApp Keyboard
-from telegram import Update, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes
+      "bot.py": `# Telegram Bot script with enhanced /start WebApp button and user commands
 import os
+import json
+import sqlite3
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, WebAppInfo
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://hello-world-fcg3.onrender.com")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("🛍️ Open Store (Mini App)", web_app=WebAppInfo(url=WEB_APP_URL))]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "👋 Welcome to our Store!\\n\\nTap the button below to browse products and place orders directly:",
-        reply_markup=reply_markup
-    )
+def get_start_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🛍️ Open Store & Place Order", web_app=WebAppInfo(url=WEB_APP_URL))
+        ],
+        [
+            InlineKeyboardButton("📦 My Orders", callback_data="cmd_orders"),
+            InlineKeyboardButton("ℹ️ Help & Guide", callback_data="cmd_help")
+        ],
+        [
+            InlineKeyboardButton("🌐 Open in Web Browser", url=WEB_APP_URL)
+        ]
+    ])
 
-def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.run_polling()
+async def post_init(application):
+    """Registers commands in Telegram autocomplete menu & persistent Shop button."""
+    commands = [
+        BotCommand("start", "🛍️ Open Store & Place Order"),
+        BotCommand("orders", "📦 View my recent orders"),
+        BotCommand("help", "ℹ️ Store guide & customer support"),
+        BotCommand("status", "📍 Check chat ID & bot status")
+    ]
+    await application.bot.set_my_commands(commands)
+    if WEB_APP_URL.startswith("https://"):
+        await application.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="Shop", web_app=WebAppInfo(url=WEB_APP_URL))
+        )
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    name = user.first_name if user else "Customer"
+    username = f" (@{user.username})" if user and user.username else ""
+    
+    welcome_text = (
+        f"👋 *Welcome to our Storefront, {name}!*{username}\\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\\n"
+        "🛍️ Browse our catalog, select items, and place your order directly inside Telegram!\\n\\n"
+        "✨ *Quick Actions:*\\n"
+        "• Tap *'🛍️ Open Store & Place Order'* to open the Mini App\\n"
+        "• Tap *'📦 My Orders'* or send `/orders` to view your purchases\\n"
+        "• Send `/help` for store assistance\\n\\n"
+        "⚡ _Fast, convenient, and powered by Telegram WebApp._"
+    )
+    await update.message.reply_text(welcome_text, reply_markup=get_start_keyboard(), parse_mode="Markdown")
+
+async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = str(user.id) if user else ""
+    await update.message.reply_text("📦 Checking your order history... Open store anytime below:", reply_markup=get_start_keyboard())
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "ℹ️ *Storefront Bot Help*\\n\\n"
+        "• `/start` - Launch storefront Mini App and menu\\n"
+        "• `/orders` - View your order history\\n"
+        "• `/help` - Store guide & support\\n\\n"
+        f"📍 Your Chat ID: `{update.effective_chat.id}`"
+    )
+    await update.message.reply_text(help_text, reply_markup=get_start_keyboard(), parse_mode="Markdown")
 
 if __name__ == "__main__":
-    main()
+    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("orders", orders_command))
+    app.add_handler(CommandHandler("help", help_command))
+    print("Bot polling started...")
+    app.run_polling()
 `,
 
-      "render.yaml": `# Render Blueprint for 1-Click Deployment
-services:
+      "requirements.txt": `Flask==3.0.3
+Flask-Cors==4.0.1
+python-telegram-bot==21.3
+python-dotenv==1.0.1
+requests==2.32.3
+gunicorn==22.0.0
+`,
+
+      "render.yaml": `services:
   - type: web
     name: telegram-ecommerce-backend
     env: python
@@ -911,28 +1161,28 @@ services:
             onclick="selectProduct('${p.id}')"
             class="relative p-3.5 rounded-xl border transition-all cursor-pointer flex items-center gap-3.5 ${
               isSelected
-                ? 'bg-blue-50/70 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
-                : 'bg-white border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/50'
+                ? 'bg-blue-50/50 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
+                : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/50'
             }"
           >
-            <div class="w-16 h-16 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200/60">
-              <img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" />
-            </div>
+            <img
+              src="${p.image}"
+              alt="${p.name}"
+              class="w-16 h-16 rounded-lg object-cover bg-slate-100 shrink-0 border border-slate-200/60"
+            />
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-1.5">
-                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md ${
-                  isSelected ? 'bg-blue-200/70 text-blue-800' : 'bg-slate-100 text-slate-600'
-                }">${p.badge}</span>
-                <span class="text-[10px] text-slate-400 font-medium">${p.category}</span>
+              <div class="flex items-center justify-between gap-1 mb-1">
+                <span class="text-[10px] font-bold text-blue-600 uppercase tracking-wider">${p.category}</span>
+                <span class="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium">${p.badge}</span>
               </div>
-              <h3 class="text-xs font-bold text-slate-900 truncate mt-0.5">${p.name}</h3>
-              <p class="text-sm font-extrabold text-blue-600 mt-0.5">$${p.price.toFixed(2)}</p>
+              <h4 class="font-bold text-xs text-slate-900 truncate">${p.name}</h4>
+              <div class="font-bold text-sm text-blue-600 mt-1">$${p.price.toFixed(2)}</div>
             </div>
-            <div class="w-5 h-5 rounded-full flex items-center justify-center ${
-              isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300'
-            }">
-              ${isSelected ? '<i data-lucide="check" class="w-3 h-3 stroke-[3]"></i>' : ''}
-            </div>
+            ${isSelected ? `
+              <div class="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+                <i data-lucide="check" class="w-3 h-3 stroke-[3]"></i>
+              </div>
+            ` : ''}
           </div>
         `;
       }).join("");
@@ -940,25 +1190,24 @@ services:
       lucide.createIcons();
     }
 
-    /* Product Selection & Quantity Handlers */
+    /* Product Selection Handler */
     function selectProduct(id) {
-      const prod = PRODUCTS.find((p) => p.id === id);
-      if (prod) {
-        state.selectedProduct = prod;
+      const found = PRODUCTS.find((p) => p.id === id);
+      if (found) {
+        state.selectedProduct = found;
         renderProductsGrid();
         updateOrderSummary();
       }
     }
 
-    function adjustQuantity(delta) {
-      const newQty = state.quantity + delta;
-      if (newQty >= 1 && newQty <= 99) {
-        state.quantity = newQty;
-        document.getElementById("quantity-display").innerText = newQty;
-        updateOrderSummary();
-      }
+    /* Quantity Controls */
+    function changeQuantity(delta) {
+      state.quantity = Math.max(1, Math.min(50, state.quantity + delta));
+      document.getElementById("display-quantity").innerText = state.quantity;
+      updateOrderSummary();
     }
 
+    /* Update Dynamic Summary & Prices */
     function updateOrderSummary() {
       const { selectedProduct, quantity } = state;
       const total = selectedProduct.price * quantity;
@@ -1362,51 +1611,25 @@ ${order.notes ? `📝 *Notes:* _${order.notes}_\n` : ""}🕒 *Time:* ${order.cre
       document.getElementById("modal-orders-list").classList.add("hidden");
     }
 
-    function loadOrdersFromStorage() {
-      try {
-        const stored = localStorage.getItem("tg_store_orders");
-        if (stored) {
-          state.orders = JSON.parse(stored);
-        }
-      } catch (e) {
-        state.orders = [];
-      }
-      updateOrdersCountHeader();
-    }
-
-    function saveOrdersToStorage() {
-      try {
-        localStorage.setItem("tg_store_orders", JSON.stringify(state.orders));
-      } catch (e) {}
-      updateOrdersCountHeader();
-    }
-
-    function updateOrdersCountHeader() {
-      const el = document.getElementById("header-order-count");
-      if (el) el.innerText = state.orders.length;
-    }
-
     function renderOrdersList() {
       const container = document.getElementById("orders-list-container");
-      if (!container) return;
-
-      const searchTerm = (document.getElementById("orders-search-input")?.value || "").toLowerCase().trim();
+      const search = (document.getElementById("orders-search-input")?.value || "").toLowerCase();
+      
       const filtered = state.orders.filter(o => 
-        o.order_number.toLowerCase().includes(searchTerm) ||
-        o.customer_name.toLowerCase().includes(searchTerm) ||
-        o.phone_number.includes(searchTerm) ||
-        o.product_name.toLowerCase().includes(searchTerm)
+        o.customer_name.toLowerCase().includes(search) ||
+        o.phone_number.toLowerCase().includes(search) ||
+        o.order_number.toLowerCase().includes(search) ||
+        o.product_name.toLowerCase().includes(search)
       );
 
-      const totalRevenue = state.orders.reduce((acc, curr) => acc + (Number(curr.total_price) || 0), 0);
-      document.getElementById("orders-total-count").innerText = state.orders.length;
-      document.getElementById("orders-total-revenue").innerText = `$${totalRevenue.toFixed(2)}`;
+      document.getElementById("orders-modal-footer-count").innerText = `Total Orders: ${state.orders.length}`;
+      document.getElementById("header-order-count").innerText = state.orders.length;
 
       if (filtered.length === 0) {
         container.innerHTML = `
-          <div class="text-center py-10 text-slate-400 space-y-2">
-            <i data-lucide="package-open" class="w-8 h-8 mx-auto text-slate-300"></i>
-            <p>No orders recorded yet. Submit your first order above!</p>
+          <div class="py-12 text-center text-slate-400 space-y-2">
+            <i data-lucide="inbox" class="w-8 h-8 mx-auto text-slate-300"></i>
+            <p>No orders found.</p>
           </div>
         `;
         lucide.createIcons();
@@ -1414,17 +1637,18 @@ ${order.notes ? `📝 *Notes:* _${order.notes}_\n` : ""}🕒 *Time:* ${order.cre
       }
 
       container.innerHTML = filtered.map(o => `
-        <div class="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <div class="space-y-0.5">
+        <div class="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="space-y-1">
             <div class="flex items-center gap-2">
               <span class="font-mono font-bold text-blue-600">${o.order_number}</span>
-              ${o.is_telegram_webapp ? '<span class="text-[9px] bg-sky-100 text-sky-800 px-1.5 py-0.2 rounded font-semibold">Mini App</span>' : ''}
-              <span class="text-[9px] px-1.5 py-0.2 rounded font-semibold ${
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
                 o.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' :
-                o.status === 'delivered' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-amber-800'
+                o.status === 'delivered' ? 'bg-indigo-100 text-indigo-800' :
+                'bg-amber-100 text-amber-800'
               }">${o.status.toUpperCase()}</span>
+              ${o.is_telegram_webapp ? '<span class="px-1.5 py-0.2 bg-sky-100 text-sky-800 rounded text-[9px] font-semibold">Telegram</span>' : ''}
             </div>
-            <div class="font-semibold text-slate-800">${o.customer_name} • <span class="font-mono text-slate-600">${o.phone_number}</span></div>
+            <div class="font-bold text-slate-800">${o.customer_name} • <span class="font-mono font-normal text-slate-500">${o.phone_number}</span></div>
             <div class="text-slate-500 text-[11px]">${o.product_name} (x${o.quantity}) • ${o.created_at}</div>
           </div>
           <div class="flex items-center gap-3 justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200/60">
@@ -1618,6 +1842,200 @@ ${order.notes ? `📝 *Notes:* _${order.notes}_\n` : ""}🕒 *Time:* ${order.cre
       }
     }
 
+    /* Test the /start command message as experienced by customers */
+    async function testStartCommand() {
+      const token = document.getElementById("input-bot-token").value.trim() || state.botConfig.bot_token;
+      const chat = document.getElementById("input-chat-id").value.trim() || state.botConfig.chat_id;
+      const resultBox = document.getElementById("start-cmd-result-box");
+      const btn = document.getElementById("btn-test-start-command");
+      const appUrl = window.location.href.split('#')[0];
+
+      resultBox.classList.remove("hidden");
+      btn.disabled = true;
+      btn.innerText = "Dispatching...";
+
+      const welcomeText = 
+        "👋 *Welcome to our Storefront, Customer!*\n" +
+        "━━━━━━━━━━━━━━━━━━━━━━\n" +
+        "🛍️ Browse products, choose quantities, and place your order directly inside Telegram with real-time status updates!\n\n" +
+        "✨ *How to order:*\n" +
+        "1. Tap *'🛍️ Open Store & Place Order'* below to launch the Mini App.\n" +
+        "2. Choose your items & enter your delivery phone number.\n" +
+        "3. Tap *'Place Order'* — you'll receive real-time status updates!\n\n" +
+        "💡 *User Commands:*\n" +
+        "• `/start` - Launch storefront Mini App and menu\n" +
+        "• `/orders` - View your order history & status\n" +
+        "• `/help` - Store guide and customer support\n" +
+        "• `/status` - Check your Telegram Chat ID";
+
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: "🛍️ Open Store & Place Order", web_app: { url: appUrl } }
+          ],
+          [
+            { text: "📦 My Orders (/orders)", callback_data: "cmd_orders" },
+            { text: "ℹ️ Help & Guide (/help)", callback_data: "cmd_help" }
+          ],
+          [
+            { text: "🌐 Open in Web Browser", url: appUrl }
+          ]
+        ]
+      };
+
+      if (token && chat) {
+        try {
+          const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chat,
+              text: welcomeText,
+              parse_mode: "Markdown",
+              reply_markup: keyboard
+            })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            resultBox.className = "p-2.5 rounded-lg border text-xs bg-emerald-50 border-emerald-200 text-emerald-900 font-medium";
+            resultBox.innerHTML = `✅ <strong>/start Card Sent!</strong> Delivered to Chat ID <code>${chat}</code> with interactive Mini App buttons. Check Telegram!`;
+            showToast("/start welcome card sent to Telegram!");
+          } else {
+            resultBox.className = "p-2.5 rounded-lg border text-xs bg-rose-50 border-rose-200 text-rose-900 font-medium";
+            resultBox.innerHTML = `❌ <strong>Telegram Error:</strong> ${data.description}`;
+          }
+        } catch (err) {
+          resultBox.className = "p-2.5 rounded-lg border text-xs bg-rose-50 border-rose-200 text-rose-900 font-medium";
+          resultBox.innerHTML = `❌ <strong>Network Error:</strong> ${err.message}`;
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="message-square" class="w-3.5 h-3.5"></i> <span>Send Test /start Card</span>`;
+          lucide.createIcons();
+        }
+        return;
+      }
+
+      // Try via Render backend
+      try {
+        const res = await fetch(`${state.backendApiUrl}/api/setup-bot-commands`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ web_app_url: appUrl })
+        });
+        const data = await res.json();
+        if (data.success) {
+          resultBox.className = "p-2.5 rounded-lg border text-xs bg-emerald-50 border-emerald-200 text-emerald-900 font-medium";
+          resultBox.innerHTML = `✅ <strong>Render Backend:</strong> Bot commands registered! You can now send <code>/start</code> in your Telegram Bot to open the store.`;
+          showToast("Bot commands configured via Render!");
+        } else {
+          resultBox.className = "p-2.5 rounded-lg border text-xs bg-amber-50 border-amber-200 text-amber-900 font-medium";
+          resultBox.innerHTML = `⚠️ <strong>Notice:</strong> Please enter your Telegram Bot Token and Chat ID above to test the <code>/start</code> welcome card.`;
+        }
+      } catch (err) {
+        resultBox.className = "p-2.5 rounded-lg border text-xs bg-amber-50 border-amber-200 text-amber-900 font-medium";
+        resultBox.innerHTML = `⚠️ <strong>Notice:</strong> Enter your Bot Token and Chat ID above to test the <code>/start</code> command directly.`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="message-square" class="w-3.5 h-3.5"></i> <span>Send Test /start Card</span>`;
+        lucide.createIcons();
+      }
+    }
+
+    /* Register /start and user commands in Telegram Bot's command autocomplete menu */
+    async function registerBotCommands() {
+      const token = document.getElementById("input-bot-token").value.trim() || state.botConfig.bot_token;
+      const resultBox = document.getElementById("start-cmd-result-box");
+      const btn = document.getElementById("btn-register-bot-commands");
+      const appUrl = window.location.href.split('#')[0];
+
+      resultBox.classList.remove("hidden");
+      btn.disabled = true;
+      btn.innerText = "Registering...";
+
+      if (token) {
+        try {
+          // 1. setMyCommands
+          const cmdRes = await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              commands: [
+                { command: "start", description: "🛍️ Open Store & Place Order" },
+                { command: "orders", description: "📦 View my recent orders" },
+                { command: "help", description: "ℹ️ Store guide & customer support" },
+                { command: "status", description: "📍 Check chat ID & bot status" }
+              ]
+            })
+          });
+          const cmdData = await cmdRes.json();
+
+          // 2. setChatMenuButton (persistent Mini App button on chat bar)
+          let menuSuccess = false;
+          if (appUrl.startsWith("https://")) {
+            try {
+              const menuRes = await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  menu_button: {
+                    type: "web_app",
+                    text: "Shop",
+                    web_app: { url: appUrl }
+                  }
+                })
+              });
+              const menuData = await menuRes.json();
+              menuSuccess = menuData.ok;
+            } catch (e) {
+              console.warn("setChatMenuButton notice:", e);
+            }
+          }
+
+          if (cmdData.ok) {
+            resultBox.className = "p-2.5 rounded-lg border text-xs bg-emerald-50 border-emerald-200 text-emerald-900 font-medium";
+            resultBox.innerHTML = `✅ <strong>Bot Menu Configured!</strong> Registered <code>/start</code>, <code>/orders</code>, <code>/help</code>${menuSuccess ? ' and set persistent "Shop" Mini App button' : ''}. Open your bot in Telegram to see the menu!`;
+            showToast("Telegram bot menu commands registered!");
+          } else {
+            resultBox.className = "p-2.5 rounded-lg border text-xs bg-rose-50 border-rose-200 text-rose-900 font-medium";
+            resultBox.innerHTML = `❌ <strong>Telegram Error:</strong> ${cmdData.description}`;
+          }
+        } catch (err) {
+          resultBox.className = "p-2.5 rounded-lg border text-xs bg-rose-50 border-rose-200 text-rose-900 font-medium";
+          resultBox.innerHTML = `❌ <strong>Network Error:</strong> ${err.message}`;
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> <span>Register /start Menu on Telegram</span>`;
+          lucide.createIcons();
+        }
+        return;
+      }
+
+      // Try via Render
+      try {
+        const res = await fetch(`${state.backendApiUrl}/api/setup-bot-commands`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ web_app_url: appUrl })
+        });
+        const data = await res.json();
+        if (data.success) {
+          resultBox.className = "p-2.5 rounded-lg border text-xs bg-emerald-50 border-emerald-200 text-emerald-900 font-medium";
+          resultBox.innerHTML = `✅ <strong>Success:</strong> Bot menu commands registered via Render backend!`;
+          showToast("Bot commands registered successfully!");
+        } else {
+          resultBox.className = "p-2.5 rounded-lg border text-xs bg-amber-50 border-amber-200 text-amber-900 font-medium";
+          resultBox.innerHTML = `⚠️ <strong>Notice:</strong> Please enter Bot Token above or verify Render environment.`;
+        }
+      } catch (err) {
+        resultBox.className = "p-2.5 rounded-lg border text-xs bg-amber-50 border-amber-200 text-amber-900 font-medium";
+        resultBox.innerHTML = `⚠️ <strong>Notice:</strong> Enter Bot Token above to register commands with Telegram.`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> <span>Register /start Menu on Telegram</span>`;
+        lucide.createIcons();
+      }
+    }
+
     /* Snippet Tabs for Deployment Preview */
     function selectSnippetTab(filename) {
       state.activeSnippetTab = filename;
@@ -1638,61 +2056,93 @@ ${order.notes ? `📝 *Notes:* _${order.notes}_\n` : ""}🕒 *Time:* ${order.cre
       }
     }
 
-    function copyCurrentSnippet() {
-      const code = CODE_SNIPPETS[state.activeSnippetTab] || "";
-      copyToClipboard(encodeURIComponent(code), `${state.activeSnippetTab} copied to clipboard!`);
+    function copyActiveSnippet() {
+      const code = CODE_SNIPPETS[state.activeSnippetTab];
+      if (code) {
+        navigator.clipboard.writeText(code);
+        const text = document.getElementById("copy-code-text");
+        text.innerText = "Copied!";
+        showToast(`${state.activeSnippetTab} copied to clipboard!`);
+        setTimeout(() => {
+          text.innerText = "Copy Code";
+        }, 2000);
+      }
     }
 
-    /* Helpers */
-    function loadBotCredentials() {
-      try {
-        const stored = localStorage.getItem("tg_bot_config");
-        if (stored) {
-          state.botConfig = JSON.parse(stored);
+    /* Storage Helpers */
+    function loadOrdersFromStorage() {
+      const saved = localStorage.getItem("tg_ecommerce_orders");
+      if (saved) {
+        try {
+          state.orders = JSON.parse(saved);
+        } catch (e) {
+          state.orders = [];
         }
-      } catch (e) {}
+      } else {
+        // Seed default sample order for immediate visual satisfaction
+        state.orders = [
+          {
+            id: 1,
+            order_number: "ORD-210530",
+            customer_name: "Demo Customer",
+            phone_number: "+1 (555) 019-2834",
+            product_name: "Wireless Noise-Cancelling Earbuds",
+            quantity: 2,
+            unit_price: 49.99,
+            total_price: 99.98,
+            notes: "Please deliver in afternoon",
+            status: "pending",
+            is_telegram_webapp: 1,
+            telegram_user_id: "12345678",
+            telegram_username: "demo_user",
+            created_at: new Date().toISOString().replace("T", " ").substring(0, 19)
+          }
+        ];
+        saveOrdersToStorage();
+      }
+      document.getElementById("header-order-count").innerText = state.orders.length;
     }
 
+    function saveOrdersToStorage() {
+      localStorage.setItem("tg_ecommerce_orders", JSON.stringify(state.orders));
+      document.getElementById("header-order-count").innerText = state.orders.length;
+    }
+
+    function loadBotCredentials() {
+      const saved = localStorage.getItem("tg_bot_config");
+      if (saved) {
+        try {
+          state.botConfig = JSON.parse(saved);
+        } catch (e) {}
+      }
+      updateBotStatusBadge();
+    }
+
+    /* Toast Notification Helper */
     function showToast(message, type = "success") {
       const container = document.getElementById("toast-container");
       if (!container) return;
 
       const toast = document.createElement("div");
-      toast.className = `px-4 py-2.5 rounded-xl shadow-lg border text-xs font-semibold flex items-center gap-2 pointer-events-auto transition-all transform duration-300 translate-y-2 opacity-0 ${
-        type === 'error' ? 'bg-rose-600 text-white border-rose-700' : 'bg-slate-900 text-white border-slate-800'
+      toast.className = `p-3 px-4 rounded-xl shadow-lg border text-xs font-semibold flex items-center gap-2 transform transition-all duration-300 pointer-events-auto ${
+        type === "error"
+          ? "bg-rose-900 text-rose-50 border-rose-800"
+          : "bg-slate-900 text-white border-slate-800"
       }`;
-      toast.innerHTML = `
-        <i data-lucide="${type === 'error' ? 'alert-circle' : 'check-circle'}" class="w-4 h-4"></i>
-        <span>${message}</span>
-      `;
+      toast.innerHTML = `<span>${message}</span>`;
       container.appendChild(toast);
-      lucide.createIcons();
-
-      requestAnimationFrame(() => {
-        toast.classList.remove("translate-y-2", "opacity-0");
-      });
 
       setTimeout(() => {
-        toast.classList.add("opacity-0", "translate-y-2");
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(10px)";
         setTimeout(() => toast.remove(), 300);
-      }, 3500);
+      }, 2500);
     }
 
-    function copyToClipboard(encodedText, successMsg = "Copied to clipboard!") {
-      const text = decodeURIComponent(encodedText);
-      navigator.clipboard.writeText(text).then(() => {
-        showToast(successMsg);
-      }).catch(() => {
-        // Fallback
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        showToast(successMsg);
-      });
+    function copyToClipboard(encodedText, successMsg) {
+      navigator.clipboard.writeText(decodeURIComponent(encodedText));
+      showToast(successMsg || "Copied to clipboard!");
     }
   </script>
 </body>
-  </html>
+</html>

@@ -17,71 +17,185 @@ except ImportError:
     pass
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-WEB_APP_URL = os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://your-app-domain.com"))
+WEB_APP_URL = os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://hello-world-fcg3.onrender.com"))
+
+import database
+
+def get_start_keyboard():
+    """Generates the interactive keyboard for the /start command."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                text="🛍️ Open Store & Place Order",
+                web_app=WebAppInfo(url=WEB_APP_URL)
+            )
+        ],
+        [
+            InlineKeyboardButton(text="📦 My Orders", callback_data="cmd_orders"),
+            InlineKeyboardButton(text="ℹ️ Help & Guide", callback_data="cmd_help")
+        ],
+        [
+            InlineKeyboardButton(
+                text="🌐 Open in Web Browser",
+                url=WEB_APP_URL
+            )
+        ]
+    ])
+
+def format_welcome_message(first_name="Customer", username=""):
+    """Creates a formatted greeting message for /start."""
+    user_handle = f" (@{username})" if username else ""
+    return (
+        f"👋 *Welcome to our Storefront, {first_name}!*{user_handle}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🛍️ Browse products, choose quantities, and place your order directly inside Telegram!\n\n"
+        "✨ *How to order:*\n"
+        "1. Tap *'🛍️ Open Store & Place Order'* below to launch the Mini App.\n"
+        "2. Choose your items & enter your delivery phone number.\n"
+        "3. Tap *'Place Order'* — you'll receive real-time status updates!\n\n"
+        "💡 *User Commands:*\n"
+        "• `/start` - Launch storefront Mini App and menu\n"
+        "• `/orders` - View your order history & status\n"
+        "• `/help` - Store guide and customer support\n"
+        "• `/status` - Check your Telegram Chat ID"
+    )
 
 def run_ptb_bot():
     """Runs the bot using modern python-telegram-bot (v20+)."""
-    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-    from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+    from telegram import Update, BotCommand, MenuButtonWebApp, WebAppInfo
+    from telegram.ext import (
+        ApplicationBuilder, CommandHandler, CallbackQueryHandler, 
+        ContextTypes, MessageHandler, filters
+    )
+
+    async def post_init(application):
+        """Sets up Telegram bot menu commands and persistent webapp menu button on launch."""
+        try:
+            # 1. Register command list in Telegram menu
+            commands = [
+                BotCommand("start", "🛍️ Open Store & Place Order"),
+                BotCommand("orders", "📦 View my recent orders"),
+                BotCommand("help", "ℹ️ Store guide & support"),
+                BotCommand("status", "📍 Check chat ID & bot status")
+            ]
+            await application.bot.set_my_commands(commands)
+            print("✅ Bot commands registered: /start, /orders, /help, /status")
+
+            # 2. Set persistent bottom chat menu button
+            if WEB_APP_URL and WEB_APP_URL.startswith("https://"):
+                await application.bot.set_chat_menu_button(
+                    menu_button=MenuButtonWebApp(text="Shop", web_app=WebAppInfo(url=WEB_APP_URL))
+                )
+                print(f"✅ Persistent 'Shop' MenuButton linked to: {WEB_APP_URL}")
+        except Exception as e:
+            print(f"Notice during bot command registration: {e}")
 
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         first_name = user.first_name if user else "Customer"
-        
-        # Create Telegram WebApp button
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    text="🛍️ Open Store & Place Order",
-                    web_app=WebAppInfo(url=WEB_APP_URL)
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🌐 Open in Web Browser",
-                    url=WEB_APP_URL
-                )
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        username = user.username if user else ""
 
-        welcome_text = (
-            f"👋 *Welcome, {first_name}!*\n\n"
-            "Welcome to our *E-Commerce Storefront*!\n"
-            "Click the button below to launch our interactive Telegram Mini App "
-            "where you can browse products, select quantities, and place your order directly inside Telegram.\n\n"
-            "✨ *Features:*\n"
-            "• Instant Mini App order form\n"
-            "• Auto-filled customer info\n"
-            "• Real-time order status tracking\n"
-            "• Instant Telegram alert notification"
-        )
+        # Check for deep-linking parameters (e.g. /start item_1)
+        args = context.args
+        deep_param = args[0] if args else None
+
+        welcome_text = format_welcome_message(first_name, username)
+        if deep_param:
+            welcome_text += f"\n\n🎯 _Catalog reference: `{deep_param}`_"
 
         await update.message.reply_text(
             welcome_text,
-            reply_markup=reply_markup,
+            reply_markup=get_start_keyboard(),
+            parse_mode="Markdown"
+        )
+
+    async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        user_id = str(user.id) if user else ""
+        first_name = user.first_name if user else "Customer"
+
+        orders = database.get_orders_by_telegram_user(user_id) if user_id else []
+
+        if not orders:
+            msg = (
+                f"📦 *No Orders Found for {first_name}*\n\n"
+                "You haven't placed any orders yet. Tap below to browse products and place your first order!"
+            )
+        else:
+            order_lines = []
+            for o in orders[:5]:
+                status_emoji = "✅" if o.get("status") == "confirmed" else "🚚" if o.get("status") == "delivered" else "⏳"
+                order_lines.append(
+                    f"• `{o.get('order_number')}`: *{o.get('product_name')}* (x{o.get('quantity')})\n"
+                    f"  💰 ${float(o.get('total_price', 0)):.2f} — {status_emoji} {o.get('status', 'pending').upper()}"
+                )
+            msg = (
+                f"📦 *Your Recent Orders ({len(orders)}):*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                + "\n\n".join(order_lines) +
+                "\n━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Tap below to open the storefront anytime:"
+            )
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=get_start_keyboard(),
             parse_mode="Markdown"
         )
 
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.effective_chat.id
         help_text = (
-            "ℹ️ *Store Bot Help*\n\n"
-            "/start - Launch the E-Commerce Web App\n"
-            "/help - Show this instruction manual\n"
-            "/status - Check your current chat ID for alerts\n\n"
-            f"Your Telegram Chat ID is: `{update.effective_chat.id}`"
+            "ℹ️ *Storefront Bot Help & Guide*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "• `/start` - Launch storefront Mini App and view welcome menu\n"
+            "• `/orders` - View your order history & live statuses\n"
+            "• `/help` - View this help message\n"
+            "• `/status` - Check your Chat ID for notification configuration\n\n"
+            f"📍 *Your Chat ID:* `{chat_id}`\n"
+            f"🔗 *Store URL:* {WEB_APP_URL}\n\n"
+            "💡 _Need assistance? Place your order via the Mini App and our team will contact you via phone or Telegram._"
         )
-        await update.message.reply_text(help_text, parse_mode="Markdown")
+        await update.message.reply_text(help_text, reply_markup=get_start_keyboard(), parse_mode="Markdown")
 
     async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         await update.message.reply_text(
-            f"✅ *Bot Active*\n\n"
+            f"✅ *Bot Online & Active*\n\n"
             f"📍 *Your Chat ID:* `{chat_id}`\n"
-            f"🔗 *Web App URL:* {WEB_APP_URL}\n\n"
-            "💡 _Use this Chat ID in TELEGRAM_CHAT_ID to receive real-time order alerts!_",
+            f"🔗 *Storefront URL:* {WEB_APP_URL}\n\n"
+            "💡 _Add this Chat ID to TELEGRAM_CHAT_ID on Render or in Bot Setup to receive instant order alerts!_",
             parse_mode="Markdown"
         )
+
+    async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+
+        if data == "cmd_orders":
+            user_id = str(query.from_user.id)
+            orders = database.get_orders_by_telegram_user(user_id) if user_id else []
+            if not orders:
+                await query.edit_message_text(
+                    "📦 *No Orders Found*\n\nYou have not placed any orders yet. Tap below to launch the store and place your first order:",
+                    reply_markup=get_start_keyboard(),
+                    parse_mode="Markdown"
+                )
+            else:
+                lines = [f"• `{o.get('order_number')}`: *{o.get('product_name')}* (${float(o.get('total_price', 0)):.2f}) - {o.get('status', 'pending').upper()}" for o in orders[:5]]
+                await query.edit_message_text(
+                    "📦 *Your Recent Orders:*\n\n" + "\n".join(lines),
+                    reply_markup=get_start_keyboard(),
+                    parse_mode="Markdown"
+                )
+        elif data == "cmd_help":
+            await query.edit_message_text(
+                f"ℹ️ *How to Order:*\n1. Tap '🛍️ Open Store & Place Order' below.\n2. Choose product & enter your contact.\n3. Submit to receive real-time updates!\n\nStore URL: {WEB_APP_URL}",
+                reply_markup=get_start_keyboard(),
+                parse_mode="Markdown"
+            )
 
     async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Triggered if the Mini App sends data back via Telegram.WebApp.sendData()"""
@@ -96,16 +210,18 @@ def run_ptb_bot():
                 "We are processing your order and will contact you shortly!",
                 parse_mode="Markdown"
             )
-        except Exception as e:
-            await update.message.reply_text(f"Order data received! Thank you.")
+        except Exception:
+            await update.message.reply_text("Order data received! Thank you.")
 
     print(f"🚀 Initializing python-telegram-bot...")
     print(f"🔗 Web App URL configured: {WEB_APP_URL}")
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("orders", orders_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
 
     print("🤖 Bot is now polling for Telegram updates... Press Ctrl+C to stop.")
@@ -124,6 +240,26 @@ def run_urllib_fallback():
     print(f"🤖 Bot listening for /start via Telegram Bot API...")
     print(f"🔗 Mini App URL: {WEB_APP_URL}")
 
+    # Register bot menu commands with Telegram API
+    try:
+        cmd_payload = {
+            "commands": [
+                {"command": "start", "description": "🛍️ Open Store & Place Order"},
+                {"command": "orders", "description": "📦 View my recent orders"},
+                {"command": "help", "description": "ℹ️ Store guide & support"},
+                {"command": "status", "description": "📍 Check chat ID & bot status"}
+            ]
+        }
+        cmd_req = urllib.request.Request(
+            f"{base_url}/setMyCommands",
+            data=json.dumps(cmd_payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        urllib.request.urlopen(cmd_req, timeout=5)
+        print("✅ Telegram bot menu commands set via Bot API.")
+    except Exception as e:
+        print(f"Command registration notice: {e}")
+
     while True:
         try:
             req_url = f"{base_url}/getUpdates?offset={offset}&timeout=20"
@@ -138,21 +274,22 @@ def run_urllib_fallback():
                             continue
                         
                         chat_id = message["chat"]["id"]
-                        text = message.get("text", "")
+                        user = message.get("from", {})
+                        first_name = user.get("first_name", "Customer")
+                        username = user.get("username", "")
+                        user_id = str(user.get("id", ""))
+                        text = message.get("text", "").strip()
 
                         if text.startswith("/start"):
                             reply_payload = {
                                 "chat_id": chat_id,
-                                "text": (
-                                    "👋 *Welcome to our E-Commerce Store!*\n\n"
-                                    "Tap the button below to launch the store Mini App:"
-                                ),
+                                "text": format_welcome_message(first_name, username),
                                 "parse_mode": "Markdown",
                                 "reply_markup": {
                                     "inline_keyboard": [
                                         [
                                             {
-                                                "text": "🛍️ Open Store Mini App",
+                                                "text": "🛍️ Open Store & Place Order",
                                                 "web_app": {"url": WEB_APP_URL}
                                             }
                                         ],
@@ -168,6 +305,54 @@ def run_urllib_fallback():
                             send_req = urllib.request.Request(
                                 f"{base_url}/sendMessage",
                                 data=json.dumps(reply_payload).encode("utf-8"),
+                                headers={"Content-Type": "application/json"}
+                            )
+                            urllib.request.urlopen(send_req, timeout=10)
+                        elif text.startswith("/orders"):
+                            orders = database.get_orders_by_telegram_user(user_id) if user_id else []
+                            if not orders:
+                                orders_text = f"📦 *No Orders Found for {first_name}*\n\nYou haven't placed any orders yet. Tap below to visit our store!"
+                            else:
+                                o_lines = [f"• `{o.get('order_number')}`: *{o.get('product_name')}* (${float(o.get('total_price', 0)):.2f}) - {o.get('status', 'pending').upper()}" for o in orders[:5]]
+                                orders_text = f"📦 *Your Recent Orders:*\n\n" + "\n".join(o_lines)
+                            
+                            orders_payload = {
+                                "chat_id": chat_id,
+                                "text": orders_text,
+                                "parse_mode": "Markdown",
+                                "reply_markup": {
+                                    "inline_keyboard": [
+                                        [{"text": "🛍️ Open Store", "web_app": {"url": WEB_APP_URL}}]
+                                    ]
+                                }
+                            }
+                            send_req = urllib.request.Request(
+                                f"{base_url}/sendMessage",
+                                data=json.dumps(orders_payload).encode("utf-8"),
+                                headers={"Content-Type": "application/json"}
+                            )
+                            urllib.request.urlopen(send_req, timeout=10)
+                        elif text.startswith("/help"):
+                            help_payload = {
+                                "chat_id": chat_id,
+                                "text": (
+                                    "ℹ️ *Storefront Bot Help*\n\n"
+                                    "• `/start` - Launch storefront Mini App\n"
+                                    "• `/orders` - View your order history\n"
+                                    "• `/help` - Help & guide\n"
+                                    "• `/status` - View Chat ID\n\n"
+                                    f"📍 Chat ID: `{chat_id}`"
+                                ),
+                                "parse_mode": "Markdown",
+                                "reply_markup": {
+                                    "inline_keyboard": [
+                                        [{"text": "🛍️ Open Store", "web_app": {"url": WEB_APP_URL}}]
+                                    ]
+                                }
+                            }
+                            send_req = urllib.request.Request(
+                                f"{base_url}/sendMessage",
+                                data=json.dumps(help_payload).encode("utf-8"),
                                 headers={"Content-Type": "application/json"}
                             )
                             urllib.request.urlopen(send_req, timeout=10)

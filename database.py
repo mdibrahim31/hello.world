@@ -96,6 +96,20 @@ def get_all_orders(limit=50, db_path=None):
     conn.close()
     return orders
 
+def get_orders_by_telegram_user(telegram_user_id, limit=10, db_path=None):
+    """Retrieves orders placed by a specific Telegram user."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM orders 
+        WHERE telegram_user_id = ? 
+        ORDER BY id DESC LIMIT ?
+    """, (str(telegram_user_id), limit))
+    rows = cursor.fetchall()
+    orders = [dict(r) for r in rows]
+    conn.close()
+    return orders
+
 def get_order_by_id(order_id, db_path=None):
     """Retrieves an order by its ID."""
     conn = get_db_connection(db_path)

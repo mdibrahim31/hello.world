@@ -100,6 +100,7 @@ try:
     CORS(app)
 
     @app.route("/api/order", methods=["POST"])
+    @app.route("/api/orders", methods=["POST"])
     def place_order():
         try:
             data = request.get_json(force=True, silent=True) or {}
@@ -216,6 +217,193 @@ try:
 
         res = send_telegram_alert(test_order, bot_token=custom_token, chat_id=custom_chat)
         return jsonify(res)
+
+    @app.route("/api/webhook", methods=["GET", "POST"])
+    @app.route("/webhook", methods=["GET", "POST"])
+    def telegram_webhook():
+        """
+        Receives Telegram Bot webhook updates.
+        Handles /start, /orders, and /help directly without needing a separate polling process.
+        """
+        if request.method == "GET":
+            return jsonify({
+                "status": "Telegram webhook listening",
+                "has_token": bool(TELEGRAM_BOT_TOKEN),
+                "instructions": "Send Telegram updates via POST to this endpoint or configure via setWebhook."
+            })
+
+        update = request.get_json(force=True, silent=True) or {}
+        message = update.get("message") or update.get("edited_message")
+        if not message:
+            return jsonify({"ok": True, "note": "No message in update"})
+
+        chat = message.get("chat", {})
+        chat_id = chat.get("id")
+        user = message.get("from", {})
+        first_name = user.get("first_name", "Customer")
+        username = user.get("username", "")
+        user_id = str(user.get("id", ""))
+        text = message.get("text", "").strip()
+
+        token = TELEGRAM_BOT_TOKEN
+        if not token or not chat_id:
+            return jsonify({"ok": False, "error": "Bot token or chat_id missing"}), 400
+
+        base_tg_url = f"https://api.telegram.org/bot{token}"
+        web_url = os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://hello-world-fcg3.onrender.com"))
+
+        if text.startswith("/start"):
+            welcome_text = (
+                f"👋 *Welcome to our Storefront, {first_name}!*"
+                + (f" (@{username})" if username else "")
+                + "\n━━━━━━━━━━━━━━━━━━━━━━\n"
+                "🛍️ Browse products, choose quantities, and place your order directly inside Telegram!\n\n"
+                "✨ *How to order:*\n"
+                "1. Tap *'🛍️ Open Store & Place Order'* below to launch the Mini App.\n"
+                "2. Choose your items & enter your delivery phone number.\n"
+                "3. Tap *'Place Order'* — you'll receive real-time status updates!\n\n"
+                "💡 *User Commands:*\n"
+                "• `/start` - Launch storefront Mini App and menu\n"
+                "• `/orders` - View your order history & status\n"
+                "• `/help` - Store guide and customer support\n"
+                "• `/status` - Check your Telegram Chat ID"
+            )
+            reply_payload = {
+                "chat_id": chat_id,
+                "text": welcome_text,
+                "parse_mode": "Markdown",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [{"text": "🛍️ Open Store & Place Order", "web_app": {"url": web_url}}],
+                        [{"text": "🌐 Open in Web Browser", "url": web_url}]
+                    ]
+                }
+            }
+        elif text.startswith("/orders"):
+            orders = database.get_orders_by_telegram_user(user_id) if user_id else []
+            if not orders:
+                orders_text = f"📦 *No Orders Found for {first_name}*\n\nYou haven't placed any orders yet. Tap below to launch our store and place your first order!"
+            else:
+                lines = [
+                    f"• `{o.get('order_number')}`: *{o.get('product_name')}* (x{o.get('quantity')}) — ${float(o.get('total_price', 0)):.2f} [{o.get('status', 'pending').upper()}]"
+                    for o in orders[:5]
+                ]
+                orders_text = f"📦 *Your Recent Orders:*\n\n" + "\n".join(lines)
+
+            reply_payload = {
+                "chat_id": chat_id,
+                "text": orders_text,
+                "parse_mode": "Markdown",
+                "reply_markup": {
+                    "inline_keyboard": [[{"text": "🛍️ Open Store", "web_app": {"url": web_url}}]]
+                }
+            }
+        elif text.startswith("/help"):
+            reply_payload = {
+                "chat_id": chat_id,
+                "text": (
+                    "ℹ️ *Storefront Bot Help & Guide*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "• `/start` - Launch storefront Mini App\n"
+                    "• `/orders` - View your order history\n"
+                    "• `/help` - View store guide\n"
+                    "• `/status` - Check your Chat ID\n\n"
+                    f"📍 *Your Chat ID:* `{chat_id}`"
+                ),
+                "parse_mode": "Markdown",
+                "reply_markup": {
+                    "inline_keyboard": [[{"text": "🛍️ Open Store", "web_app": {"url": web_url}}]]
+                }
+            }
+        elif text.startswith("/status"):
+            reply_payload = {
+                "chat_id": chat_id,
+                "text": f"📍 *Your Telegram Chat ID:* `{chat_id}`\n\nUse this Chat ID in TELEGRAM_CHAT_ID to receive alerts!",
+                "parse_mode": "Markdown"
+            }
+        else:
+            # Default response
+            reply_payload = {
+                "chat_id": chat_id,
+                "text": "👋 Welcome! Tap below to open our store and place an order:",
+                "reply_markup": {
+                    "inline_keyboard": [[{"text": "🛍️ Open Store & Place Order", "web_app": {"url": web_url}}]]
+                }
+            }
+
+        try:
+            req = urllib.request.Request(
+                f"{base_tg_url}/sendMessage",
+                data=json.dumps(reply_payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                return jsonify({"ok": True, "result": resp_data})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/setup-bot-commands", methods=["GET", "POST"])
+    def setup_bot_commands():
+        """
+        Registers the /start, /orders, /help commands in Telegram's autocomplete menu
+        and configures the persistent 'Shop' WebApp menu button.
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        token = data.get("bot_token") or TELEGRAM_BOT_TOKEN
+        web_url = data.get("web_app_url") or os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://hello-world-fcg3.onrender.com"))
+
+        if not token:
+            return jsonify({"success": False, "error": "TELEGRAM_BOT_TOKEN is not configured"}), 400
+
+        base_tg_url = f"https://api.telegram.org/bot{token}"
+        results = {}
+
+        # 1. setMyCommands
+        try:
+            cmd_payload = {
+                "commands": [
+                    {"command": "start", "description": "🛍️ Open Store & Place Order"},
+                    {"command": "orders", "description": "📦 View my recent orders"},
+                    {"command": "help", "description": "ℹ️ Store guide & customer support"},
+                    {"command": "status", "description": "📍 Check chat ID & bot status"}
+                ]
+            }
+            req = urllib.request.Request(
+                f"{base_tg_url}/setMyCommands",
+                data=json.dumps(cmd_payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                results["setMyCommands"] = json.loads(r.read().decode("utf-8"))
+        except Exception as e:
+            results["setMyCommands"] = {"ok": False, "error": str(e)}
+
+        # 2. setChatMenuButton (Persistent Mini App Button)
+        if web_url and web_url.startswith("https://"):
+            try:
+                menu_payload = {
+                    "menu_button": {
+                        "type": "web_app",
+                        "text": "Shop",
+                        "web_app": {"url": web_url}
+                    }
+                }
+                req2 = urllib.request.Request(
+                    f"{base_tg_url}/setChatMenuButton",
+                    data=json.dumps(menu_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req2, timeout=10) as r2:
+                    results["setChatMenuButton"] = json.loads(r2.read().decode("utf-8"))
+            except Exception as e:
+                results["setChatMenuButton"] = {"ok": False, "error": str(e)}
+
+        return jsonify({
+            "success": True,
+            "message": "Bot menu commands and /start configuration dispatched to Telegram!",
+            "details": results
+        })
 
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")

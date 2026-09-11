@@ -29,8 +29,8 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // API Order POST route
-  if (url.pathname === '/api/order' && req.method === 'POST') {
+  // API Order POST route (accepts both /api/orders and /api/order)
+  if ((url.pathname === '/api/orders' || url.pathname === '/api/order') && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
