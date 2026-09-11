@@ -66,10 +66,12 @@ def start_background_bot():
 
         print(f"🤖 [app.py] Starting Telegram bot ({bot_script}) in background process...")
         try:
-            # Spawn bot.py using the current Python interpreter environment
+            bot_env = os.environ.copy()
+            bot_env["PYTHONUNBUFFERED"] = "1"
+            # Spawn bot.py unbuffered using the current Python interpreter environment
             _bot_process = subprocess.Popen(
-                [sys.executable, bot_script],
-                env=os.environ.copy()
+                [sys.executable, "-u", bot_script],
+                env=bot_env
             )
             print(f"✅ [app.py] Telegram bot background process started successfully (PID: {_bot_process.pid})")
             return _bot_process

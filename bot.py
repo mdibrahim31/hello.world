@@ -72,6 +72,13 @@ def run_ptb_bot():
     async def post_init(application):
         """Sets up Telegram bot menu commands and persistent webapp menu button on launch."""
         try:
+            # Clear any previously configured webhook so long-polling updates work without conflict
+            await application.bot.delete_webhook(drop_pending_updates=True)
+            print("✅ Telegram webhook cleared (drop_pending_updates=True)")
+        except Exception as e:
+            print(f"Notice clearing webhook: {e}")
+
+        try:
             # 1. Register command list in Telegram menu
             commands = [
                 BotCommand("start", "🛍️ Open Store & Place Order"),
@@ -225,20 +232,28 @@ def run_ptb_bot():
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
 
     print("🤖 Bot is now polling for Telegram updates... Press Ctrl+C to stop.")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 def run_urllib_fallback():
     """Fallback standard-library long-polling runner if python-telegram-bot package is not installed."""
     print("ℹ️ python-telegram-bot not installed. Running lightweight standard library polling runner...")
     if not TELEGRAM_BOT_TOKEN:
         print("❌ Error: TELEGRAM_BOT_TOKEN environment variable is not set.")
-        print("💡 Set TELEGRAM_BOT_TOKEN in .env or run with: TELEGRAM_BOT_TOKEN=your_token python bot.py")
+        print("💡 Set TELEGRAM_BOT_TOKEN in Render Environment Variables or in .env")
         return
 
     offset = 0
     base_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
     print(f"🤖 Bot listening for /start via Telegram Bot API...")
     print(f"🔗 Mini App URL: {WEB_APP_URL}")
+
+    # Ensure any prior webhook is deleted so getUpdates does not fail with 409 Conflict
+    try:
+        del_req = urllib.request.Request(f"{base_url}/deleteWebhook?drop_pending_updates=true")
+        urllib.request.urlopen(del_req, timeout=5)
+        print("✅ Telegram webhook cleared (drop_pending_updates=True)")
+    except Exception as e:
+        print(f"Webhook clear notice: {e}")
 
     # Register bot menu commands with Telegram API
     try:
@@ -266,12 +281,17 @@ def run_urllib_fallback():
             req = urllib.request.Request(req_url)
             with urllib.request.urlopen(req, timeout=25) as res:
                 body = json.loads(res.read().decode("utf-8"))
-                if body.get("ok"):
-                    for update in body.get("result", []):
-                        offset = update["update_id"] + 1
-                        message = update.get("message")
-                        if not message:
-                            continue
+                if not body.get("ok"):
+                    print(f"⚠️ Telegram getUpdates warning: {body.get('description')}")
+                    import time
+                    time.sleep(3)
+                    continue
+
+                for update in body.get("result", []):
+                    offset = update["update_id"] + 1
+                    message = update.get("message")
+                    if not message:
+                        continue
                         
                         chat_id = message["chat"]["id"]
                         user = message.get("from", {})
@@ -372,8 +392,9 @@ def run_urllib_fallback():
             print("\nBot stopped.")
             break
         except Exception as e:
-            # print retry wait
-            pass
+            print(f"⚠️ Telegram polling connection notice: {e}")
+            import time
+            time.sleep(3)
 
 def main():
     if not TELEGRAM_BOT_TOKEN:
