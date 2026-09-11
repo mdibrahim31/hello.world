@@ -7,6 +7,9 @@ import sys
 import json
 import urllib.request
 import urllib.parse
+import subprocess
+import threading
+import atexit
 from datetime import datetime
 
 # Load environment variables if python-dotenv is available
@@ -22,6 +25,80 @@ import database
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 PORT = int(os.getenv("PORT", 3000))
+
+# Background Bot Process Tracking
+_bot_process = None
+_bot_lock = threading.Lock()
+
+def start_background_bot():
+    """
+    Automatically runs bot.py as a background process/thread when app.py starts.
+    This allows both the REST API server and the Telegram Bot (polling for /start,
+    /orders, and alerts) to run simultaneously without needing a separate worker
+    or changing the Render Start Command.
+    """
+    global _bot_process
+    with _bot_lock:
+        # If already running, do not start again
+        if _bot_process is not None:
+            if hasattr(_bot_process, "poll") and _bot_process.poll() is None:
+                return _bot_process
+            if hasattr(_bot_process, "is_alive") and _bot_process.is_alive():
+                return _bot_process
+
+        # Prevent duplicate bot process if Werkzeug debug reloader parent process runs
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "false":
+            return None
+
+        # Allow user to disable auto-bot via environment variable if running standalone bot
+        if os.getenv("DISABLE_BACKGROUND_BOT", "false").lower() in ("true", "1", "yes"):
+            print("ℹ️ [Background Bot] Disabled via DISABLE_BACKGROUND_BOT env variable.")
+            return None
+
+        bot_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.py")
+        if not os.path.exists(bot_script):
+            print(f"⚠️ [Background Bot] bot.py not found at: {bot_script}")
+            return None
+
+        token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        if not token:
+            print("ℹ️ [Background Bot] TELEGRAM_BOT_TOKEN is not set yet. The bot script will run and wait for credentials.")
+
+        print(f"🤖 [app.py] Starting Telegram bot ({bot_script}) in background process...")
+        try:
+            # Spawn bot.py using the current Python interpreter environment
+            _bot_process = subprocess.Popen(
+                [sys.executable, bot_script],
+                env=os.environ.copy()
+            )
+            print(f"✅ [app.py] Telegram bot background process started successfully (PID: {_bot_process.pid})")
+            return _bot_process
+        except Exception as e:
+            print(f"⚠️ [app.py] Subprocess execution failed: {e}. Falling back to background daemon thread...")
+            try:
+                import bot
+                t = threading.Thread(target=bot.main, daemon=True, name="TelegramBotDaemon")
+                t.start()
+                _bot_process = t
+                print("✅ [app.py] Telegram bot running in background daemon thread.")
+                return _bot_process
+            except Exception as thread_err:
+                print(f"❌ [app.py] Failed to launch bot thread: {thread_err}")
+                return None
+
+def stop_background_bot():
+    """Cleanly terminates the background bot process when the web server shuts down."""
+    global _bot_process
+    if _bot_process is not None:
+        try:
+            if hasattr(_bot_process, "terminate"):
+                print("🛑 [app.py] Shutting down background Telegram bot process...")
+                _bot_process.terminate()
+                _bot_process.wait(timeout=3)
+        except Exception:
+            pass
+
+atexit.register(stop_background_bot)
 
 def format_telegram_alert(order):
     """Formats a sleek Markdown Telegram notification message for a new order."""
@@ -405,6 +482,57 @@ try:
             "details": results
         })
 
+    @app.route("/api/health", methods=["GET"])
+    @app.route("/health", methods=["GET"])
+    def health_check():
+        bot_running = False
+        bot_pid = None
+        if _bot_process is not None:
+            if hasattr(_bot_process, "poll"):
+                bot_running = (_bot_process.poll() is None)
+                bot_pid = _bot_process.pid
+            elif hasattr(_bot_process, "is_alive"):
+                bot_running = _bot_process.is_alive()
+                bot_pid = "thread"
+
+        return jsonify({
+            "status": "healthy",
+            "server": "Flask E-Commerce API",
+            "timestamp": datetime.now().isoformat(),
+            "has_bot_token": bool(TELEGRAM_BOT_TOKEN),
+            "has_chat_id": bool(TELEGRAM_CHAT_ID),
+            "background_bot": {
+                "running": bot_running,
+                "pid": bot_pid,
+                "auto_start": True
+            }
+        })
+
+    @app.route("/api/bot-status", methods=["GET", "POST"])
+    def bot_status_endpoint():
+        """Returns background bot status, or starts/restarts it if requested."""
+        if request.method == "POST":
+            stop_background_bot()
+            start_background_bot()
+
+        bot_running = False
+        bot_pid = None
+        if _bot_process is not None:
+            if hasattr(_bot_process, "poll"):
+                bot_running = (_bot_process.poll() is None)
+                bot_pid = _bot_process.pid
+            elif hasattr(_bot_process, "is_alive"):
+                bot_running = _bot_process.is_alive()
+                bot_pid = "thread"
+
+        return jsonify({
+            "running": bot_running,
+            "pid": bot_pid,
+            "bot_token_configured": bool(TELEGRAM_BOT_TOKEN),
+            "chat_id_configured": bool(TELEGRAM_CHAT_ID),
+            "web_app_url": os.getenv("WEB_APP_URL", os.getenv("APP_URL", "https://hello-world-fcg3.onrender.com"))
+        })
+
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
     def serve_frontend(path):
@@ -415,12 +543,19 @@ try:
             return send_from_directory(dist_dir, "index.html")
         return jsonify({"status": "API Server running. Frontend build pending."})
 
+    # Start the background bot automatically when the WSGI/Flask module is loaded
+    start_background_bot()
+
 except ImportError:
     app = None
 
 if __name__ == "__main__":
+    # Ensure the background bot is running when invoked directly
+    start_background_bot()
+
     if app:
-        print(f"Starting Flask server on port {PORT}...")
-        app.run(host="0.0.0.0", port=PORT, debug=True)
+        print(f"🚀 Starting Flask server on port {PORT}...")
+        # debug=False and use_reloader=False prevent duplicate child processes in production/local
+        app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
     else:
         print("Flask not installed in this Python environment. Requirements can be installed via 'pip install -r requirements.txt'")

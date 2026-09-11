@@ -375,7 +375,7 @@ def run_urllib_fallback():
             # print retry wait
             pass
 
-if __name__ == "__main__":
+def main():
     if not TELEGRAM_BOT_TOKEN:
         print("⚠️ Warning: TELEGRAM_BOT_TOKEN is not set.")
         print("Please configure TELEGRAM_BOT_TOKEN to connect your Telegram Bot.")
@@ -386,3 +386,6 @@ if __name__ == "__main__":
         run_ptb_bot()
     except ImportError:
         run_urllib_fallback()
+
+if __name__ == "__main__":
+    main()
