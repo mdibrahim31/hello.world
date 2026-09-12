@@ -1,0 +1,34 @@
+services:
+  # 1. Admin Mini App & API Web Service
+  - type: web
+    name: telegram-admin-miniapp
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: ADMIN_TELEGRAM_ID
+        sync: false
+      - key: ADMIN_PIN
+        value: "1234"
+      - key: WEB_APP_URL
+        sync: false
+
+  # 2. Telegram Bot Polling Worker
+  - type: worker
+    name: telegram-bot-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: ADMIN_TELEGRAM_ID
+        sync: false
+      - key: WEB_APP_URL
+        sync: false
