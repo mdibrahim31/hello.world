@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Python Web Server (Flask) for Render Web Service
-------------------------------------------------
-Serves the Admin Mini App UI and REST API for order processing,
-Telegram alert dispatching, and security verification.
-Runs with Gunicorn or direct python app.py.
+Single-Service Full Web + Telegram Bot Webhook & Poller
+-------------------------------------------------------
+Runs Flask Web Server (Admin Mini App & REST APIs) AND handles
+Telegram Bot updates in real-time (no separate worker required).
 """
 
 import os
@@ -12,11 +11,20 @@ import sys
 import time
 import json
 import logging
+import threading
 import requests
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Setup logging
+logging.basicConfig(
+    format="%(asctime)s - [%(levelname)s] - %(message)s",
+    level=logging.INFO,
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("telegram_app")
 
 app = Flask(__name__, static_folder=".")
 
@@ -27,9 +35,19 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
 ADMIN_PIN = os.getenv("ADMIN_PIN", "1234").strip()
-WEB_APP_URL = os.getenv("WEB_APP_URL", "").strip()
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://hello-world-fcg3.onrender.com").strip()
 
-# In-memory experiment product catalog
+# Dynamic in-memory list of authorized admin Telegram user IDs
+authorized_admins = set()
+if ADMIN_TELEGRAM_ID:
+    for aid in ADMIN_TELEGRAM_ID.split(","):
+        clean_id = aid.strip()
+        if clean_id:
+            authorized_admins.add(clean_id)
+if TELEGRAM_CHAT_ID:
+    authorized_admins.add(TELEGRAM_CHAT_ID.strip())
+
+# In-memory products
 memory_products = [
     {
         "id": "prod-1",
@@ -73,7 +91,7 @@ memory_products = [
     }
 ]
 
-# In-memory experiment orders
+# In-memory orders
 memory_orders = [
     {
         "id": 1001,
@@ -106,37 +124,266 @@ memory_orders = [
         "telegram_user_id": "89123041",
         "telegram_username": "sarah_c",
         "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime(time.time() - 14400))
-    },
-    {
-        "id": 1003,
-        "order_number": "ORD-2026-003",
-        "customer_name": "Tariqul Islam",
-        "phone_number": "+880 1711-223344",
-        "product_name": "Smart Fitness Tracker Band",
-        "quantity": 1,
-        "unit_price": 34.99,
-        "total_price": 34.99,
-        "status": "pending",
-        "notes": "Call before delivery.",
-        "source": "Telegram Chat Bot (/order)",
-        "telegram_user_id": "99482103",
-        "telegram_username": "tariq_bd",
-        "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime(time.time() - 3600))
     }
 ]
 
 
-def send_telegram_alert(order, custom_token=None, custom_chat=None):
-    """Dispatch real-time Markdown alert to Telegram Admin."""
-    token = custom_token or TELEGRAM_BOT_TOKEN
-    target = custom_chat or TELEGRAM_CHAT_ID or ADMIN_TELEGRAM_ID
+# ================= TELEGRAM HELPER FUNCTIONS =================
+
+def telegram_api(method, payload=None):
+    token = TELEGRAM_BOT_TOKEN
+    if not token:
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not configured"}
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    try:
+        res = requests.post(url, json=payload or {}, timeout=15)
+        return res.json()
+    except Exception as e:
+        logger.error(f"Telegram API {method} error: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def remove_global_miniapp():
+    """Removes the persistent 'Shop' Mini App button for all regular users."""
+    logger.info("Enforcing chat-only policy & removing global Mini App button...")
+    telegram_api("setChatMenuButton", {"menu_button": {"type": "default"}})
+    telegram_api("setMyCommands", {
+        "commands": [
+            {"command": "start", "description": "👋 Start bot & store menu"},
+            {"command": "menu", "description": "🛍️ View products & prices"},
+            {"command": "order", "description": "📦 Order: /order <id> <qty> <phone> <name>"},
+            {"command": "help", "description": "ℹ️ Support & guide"},
+            {"command": "status", "description": "📍 Check Telegram User ID"}
+        ]
+    })
+
+
+def is_user_admin(user_id, chat_id=None):
+    uid = str(user_id).strip()
+    cid = str(chat_id).strip() if chat_id else ""
+    if uid in authorized_admins or cid in authorized_admins:
+        return True
+    if ADMIN_TELEGRAM_ID and (uid == ADMIN_TELEGRAM_ID or cid == ADMIN_TELEGRAM_ID):
+        return True
+    if TELEGRAM_CHAT_ID and (uid == TELEGRAM_CHAT_ID or cid == TELEGRAM_CHAT_ID):
+        return True
+    return False
+
+
+def process_telegram_update(update):
+    """Core logic to process incoming messages & commands."""
+    if "message" not in update:
+        return
+
+    msg = update["message"]
+    chat_id = msg.get("chat", {}).get("id")
+    user = msg.get("from", {})
+    user_id = user.get("id")
+    user_name = user.get("first_name", "Customer")
+    username = user.get("username", "")
+    text = msg.get("text", "").strip()
+
+    if not text or not chat_id:
+        return
+
+    logger.info(f"Telegram message received from {user_id} (@{username}): {text}")
+
+    # Reset any cached menu button for regular user
+    if not is_user_admin(user_id, chat_id):
+        telegram_api("setChatMenuButton", {"chat_id": chat_id, "menu_button": {"type": "default"}})
+
+    if text.startswith("/start"):
+        start_msg = (
+            f"👋 *Welcome to our Store, {user_name}!*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "You can browse our products and place orders directly in this chat.\n\n"
+            "🛍️ *Quick Commands:*\n"
+            "• `/menu` — View full product catalog & prices\n"
+            "• `/order` — Order an item directly via chat\n"
+            "• `/help` — Help and support guide\n"
+            "• `/status` — View your Telegram ID\n\n"
+            "👉 Send `/menu` to see available products!"
+        )
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": start_msg, "parse_mode": "Markdown"})
+
+    elif text.startswith("/menu"):
+        lines = ["🛍️ *PRODUCT CATALOG (ORDER IN CHAT)*\n━━━━━━━━━━━━━━━━━━━━━━"]
+        for idx, p in enumerate(memory_products, 1):
+            lines.append(f"*{idx}. {p['name']}*\n💰 Price: *${p['price']:.2f}*\nℹ️ _{p.get('description', '')}_")
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append("👉 *To place an order, send:*\n`/order <Item_No> <Qty> <Phone> <Your_Name>`\n\n_Example:_\n`/order 1 1 +8801700000000 Alex`")
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": "\n\n".join(lines), "parse_mode": "Markdown"})
+
+    elif text.startswith("/order"):
+        parts = text.split(maxsplit=4)
+        if len(parts) < 4:
+            guide = (
+                "📦 *How to Order in Chat:*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Please send the `/order` command like this:\n\n"
+                "`/order <Item_Number> <Quantity> <Phone_Number> [Name]`\n\n"
+                "📌 *Example:* `/order 1 1 +15550192834 Tariqul Islam`\n"
+                "💡 _Send `/menu` to check item numbers._"
+            )
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": guide, "parse_mode": "Markdown"})
+            return
+
+        try:
+            item_idx = int(parts[1]) - 1
+            qty = max(1, int(parts[2]))
+            phone = parts[3]
+            cust_name = parts[4] if len(parts) > 4 else user_name
+        except ValueError:
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": "❌ Invalid number format. Example: `/order 1 1 +15550192834 John`", "parse_mode": "Markdown"})
+            return
+
+        if item_idx < 0 or item_idx >= len(memory_products):
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": f"❌ Item #{parts[1]} not found. Send `/menu` to view items 1 to {len(memory_products)}.", "parse_mode": "Markdown"})
+            return
+
+        prod = memory_products[item_idx]
+        total_price = prod["price"] * qty
+        ref_id = f"ORD-{int(time.time()) % 100000:05d}"
+
+        new_order = {
+            "id": int(time.time() * 1000),
+            "order_number": ref_id,
+            "customer_name": cust_name,
+            "phone_number": phone,
+            "product_name": prod["name"],
+            "quantity": qty,
+            "unit_price": prod["price"],
+            "total_price": total_price,
+            "status": "pending",
+            "notes": f"Chat Order by {user_name} (@{username})",
+            "source": "Telegram Chat Bot (/order)",
+            "telegram_user_id": str(user_id),
+            "telegram_username": username,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime())
+        }
+
+        memory_orders.insert(0, new_order)
+        logger.info(f"New Order: {ref_id} for {cust_name}")
+
+        # Send confirmation to user
+        conf_msg = (
+            "✅ *ORDER RECEIVED SUCCESSFULLY!*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔖 *Order Ref:* `{ref_id}`\n"
+            f"📦 *Product:* {prod['name']}\n"
+            f"🔢 *Quantity:* {qty} pc(s)\n"
+            f"💰 *Total Amount:* ${total_price:.2f}\n"
+            f"📞 *Phone:* `{phone}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Thank you! Our team will contact you shortly to confirm delivery."
+        )
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": conf_msg, "parse_mode": "Markdown"})
+
+        # Send alert to Admin
+        send_admin_alert_all(new_order)
+
+    elif text.startswith("/admin"):
+        if not is_user_admin(user_id, chat_id):
+            rejection = (
+                "🚫 *ACCESS RESTRICTED*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "The Mini App is reserved for Store Administrators.\n"
+                "Regular customers can order using `/menu` and `/order`.\n\n"
+                f"Your Telegram ID: `{user_id}`"
+            )
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": rejection, "parse_mode": "Markdown"})
+            return
+
+        # Enable admin menu button
+        telegram_api("setChatMenuButton", {
+            "chat_id": chat_id,
+            "menu_button": {"type": "web_app", "text": "Admin App", "web_app": {"url": WEB_APP_URL}}
+        })
+
+        card = (
+            f"🔐 *ADMIN CONTROL PANEL*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👑 *Welcome, {user_name}! (Admin Verified)*\n\n"
+            "Tap the button below to launch the **Admin Control Mini App**:\n"
+            "• Manage live customer orders\n"
+            "• Change delivery statuses\n\n"
+            "🛠️ *Admin Commands:*\n"
+            "• `/grant <id>` — Enable Mini App for another user\n"
+            "• `/revoke <id>` — Remove Mini App access\n"
+            "• `/admins` — View list of admins"
+        )
+        kb = {"inline_keyboard": [[{"text": "⚡ Open Admin Control Mini App", "web_app": {"url": WEB_APP_URL}}]]}
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": card, "parse_mode": "Markdown", "reply_markup": kb})
+
+    elif text.startswith("/grant"):
+        if not is_user_admin(user_id, chat_id):
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": "🚫 Admin only command.", "parse_mode": "Markdown"})
+            return
+        parts = text.split()
+        if len(parts) < 2:
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": "📌 Usage: `/grant <telegram_user_id>`", "parse_mode": "Markdown"})
+            return
+        target = parts[1].strip()
+        authorized_admins.add(target)
+        telegram_api("setChatMenuButton", {
+            "chat_id": target,
+            "menu_button": {"type": "web_app", "text": "Admin App", "web_app": {"url": WEB_APP_URL}}
+        })
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": f"✅ Granted Admin Mini App access to Telegram ID `{target}`.", "parse_mode": "Markdown"})
+        telegram_api("sendMessage", {"chat_id": target, "text": "🎉 You have been granted Admin Access! Use `/admin` to launch.", "parse_mode": "Markdown"})
+
+    elif text.startswith("/revoke"):
+        if not is_user_admin(user_id, chat_id):
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": "🚫 Admin only command.", "parse_mode": "Markdown"})
+            return
+        parts = text.split()
+        if len(parts) < 2:
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": "📌 Usage: `/revoke <telegram_user_id>`", "parse_mode": "Markdown"})
+            return
+        target = parts[1].strip()
+        if target in authorized_admins:
+            authorized_admins.remove(target)
+            telegram_api("setChatMenuButton", {"chat_id": target, "menu_button": {"type": "default"}})
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": f"🚫 Revoked Admin access for `{target}`.", "parse_mode": "Markdown"})
+
+    elif text.startswith("/admins"):
+        if not is_user_admin(user_id, chat_id):
+            telegram_api("sendMessage", {"chat_id": chat_id, "text": "🚫 Admin only command.", "parse_mode": "Markdown"})
+            return
+        lines = ["👑 *AUTHORIZED ADMIN IDS:*"] + [f"• `{a}`" for a in authorized_admins]
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": "\n".join(lines), "parse_mode": "Markdown"})
+
+    elif text.startswith("/status"):
+        is_adm = is_user_admin(user_id, chat_id)
+        stat = (
+            "📍 *TELEGRAM ACCOUNT STATUS*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🆔 *Your User ID:* `{user_id}`\n"
+            f"💬 *Chat ID:* `{chat_id}`\n"
+            f"👤 *Username:* @{username or 'N/A'}\n"
+            f"🛡️ *Role:* {'👑 Administrator (Mini App Enabled)' if is_adm else '👤 Regular Customer (Chat Only)'}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": stat, "parse_mode": "Markdown"})
+
+    elif text.startswith("/help"):
+        help_text = (
+            "ℹ️ *CUSTOMER SUPPORT & HELP*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "1. Send `/menu` to check products\n"
+            "2. Send `/order 1 1 +15550192834 Name` to order\n"
+            "3. We will process and confirm your order promptly!"
+        )
+        telegram_api("sendMessage", {"chat_id": chat_id, "text": help_text, "parse_mode": "Markdown"})
+
+
+def send_admin_alert_all(order):
+    targets = list(authorized_admins) if authorized_admins else ([ADMIN_TELEGRAM_ID or TELEGRAM_CHAT_ID] if (ADMIN_TELEGRAM_ID or TELEGRAM_CHAT_ID) else [])
+    if not targets:
+        return
 
     qty = order.get("quantity", 1)
     total = f"{float(order.get('total_price', 0)):.2f}"
-    username_line = f"\n👤 *Telegram User:* @{order['telegram_username']}" if order.get("telegram_username") else ""
-    user_id_line = f" (ID: `{order['telegram_user_id']}`)" if order.get("telegram_user_id") else ""
-    notes_line = f"\n📝 *Notes:* _{order['notes']}_" if order.get("notes") else ""
-
     text = (
         "🔔 *NEW ORDER ALERT (ADMIN ONLY)*\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -146,45 +393,100 @@ def send_telegram_alert(order, custom_token=None, custom_chat=None):
         f"📦 *Product:* *{order.get('product_name')}*\n"
         f"🔢 *Quantity:* {qty} unit(s)\n"
         f"💰 *Total Amount:* ${total}\n"
-        f"📍 *Channel:* {order.get('source', 'Telegram Chat Bot')}"
-        f"{username_line}{user_id_line}"
-        f"{notes_line}\n"
         f"🕒 *Time:* {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "⚡ _Manage in Admin Mini App: /admin_"
     )
-
-    if not token or not target:
-        return {"success": False, "simulated": True, "preview": text, "error": "Bot token or chat ID not set"}
-
-    try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": target, "text": text, "parse_mode": "Markdown"}
-        res = requests.post(url, json=payload, timeout=10)
-        return {"success": res.status_code == 200, "result": res.json()}
-    except Exception as e:
-        return {"success": False, "error": str(e), "preview": text}
+    for t in targets:
+        telegram_api("sendMessage", {"chat_id": t, "text": text, "parse_mode": "Markdown"})
 
 
-# Serve Single-Page Admin Mini App Frontend
+# ================= BACKGROUND BOT POLLING THREAD =================
+bot_thread_started = False
+
+def start_bot_background_poller():
+    global bot_thread_started
+    if bot_thread_started:
+        return
+    bot_thread_started = True
+
+    def poller_loop():
+        logger.info("🤖 Starting Integrated Telegram Bot Background Poller inside Flask Web Service...")
+        time.sleep(2)
+        remove_global_miniapp()
+
+        offset = 0
+        while True:
+            try:
+                token = TELEGRAM_BOT_TOKEN
+                if not token:
+                    time.sleep(10)
+                    continue
+
+                url = f"https://api.telegram.org/bot{token}/getUpdates"
+                params = {"offset": offset, "timeout": 20}
+                res = requests.get(url, params=params, timeout=25)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("ok"):
+                        for upd in data.get("result", []):
+                            offset = upd["update_id"] + 1
+                            try:
+                                process_telegram_update(upd)
+                            except Exception as e:
+                                logger.error(f"Error processing update: {e}")
+                    else:
+                        time.sleep(3)
+                else:
+                    time.sleep(3)
+            except requests.exceptions.Timeout:
+                continue
+            except Exception as e:
+                logger.error(f"Poller exception: {e}")
+                time.sleep(4)
+
+    t = threading.Thread(target=poller_loop, daemon=True)
+    t.start()
+
+
+# Launch polling thread immediately on module load
+if TELEGRAM_BOT_TOKEN:
+    start_bot_background_poller()
+
+
+# ================= FLASK WEB ROUTES & WEBHOOKS =================
+
 @app.route("/")
-def serve_index():
+def index():
+    if not bot_thread_started and TELEGRAM_BOT_TOKEN:
+        start_bot_background_poller()
     return send_from_directory(".", "index.html")
 
 
 @app.route("/api/health")
 @app.route("/health")
 def health():
+    if not bot_thread_started and TELEGRAM_BOT_TOKEN:
+        start_bot_background_poller()
     return jsonify({
         "status": "healthy",
-        "system": "Telegram Bot & Admin Mini App (Python / Flask on Render)",
-        "database": "In-Memory Experiment Mode",
-        "orders_count": len(memory_orders),
-        "products_count": len(memory_products),
+        "system": "Integrated Telegram Bot & Admin Mini App (Render Web Service)",
+        "poller_running": bot_thread_started,
         "has_bot_token": bool(TELEGRAM_BOT_TOKEN),
         "has_chat_id": bool(TELEGRAM_CHAT_ID),
-        "has_admin_id": bool(ADMIN_TELEGRAM_ID)
+        "has_admin_id": bool(ADMIN_TELEGRAM_ID),
+        "authorized_admins": list(authorized_admins),
+        "orders_count": len(memory_orders)
     })
+
+
+# Telegram Webhook endpoint (Alternative to polling)
+@app.route("/api/telegram/webhook", methods=["POST"])
+def telegram_webhook():
+    update = request.get_json(silent=True) or {}
+    if update:
+        process_telegram_update(update)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/verify", methods=["POST"])
@@ -194,31 +496,15 @@ def verify_admin():
     pin = str(data.get("pin", "")).strip()
     tg_user_id = str(data.get("telegram_user_id", "")).strip()
 
-    is_adm = False
-    reason = ""
-
     if pin and pin == str(ADMIN_PIN).strip():
-        is_adm = True
-        reason = "Admin Security PIN verified"
-    elif tg_user_id:
-        if ADMIN_TELEGRAM_ID and tg_user_id == str(ADMIN_TELEGRAM_ID).strip():
-            is_adm = True
-            reason = f"Telegram User ID matched ADMIN_TELEGRAM_ID ({tg_user_id})"
-        elif TELEGRAM_CHAT_ID and tg_user_id == str(TELEGRAM_CHAT_ID).strip():
-            is_adm = True
-            reason = f"Telegram User ID matched TELEGRAM_CHAT_ID ({tg_user_id})"
+        return jsonify({"success": True, "isAdmin": True, "message": "PIN verified"})
+    if tg_user_id and is_user_admin(tg_user_id):
+        return jsonify({"success": True, "isAdmin": True, "message": f"Telegram ID {tg_user_id} verified"})
 
-    if is_adm:
-        return jsonify({"success": True, "isAdmin": True, "message": reason})
-    return jsonify({
-        "success": False,
-        "isAdmin": False,
-        "error": "Access Denied. Mini App is restricted to Admin only. Enter valid Admin PIN or launch from Admin Telegram Account."
-    }), 403
+    return jsonify({"success": False, "isAdmin": False, "error": "Access Denied"}), 403
 
 
 @app.route("/api/admin/config", methods=["GET", "POST"])
-@app.route("/api/config", methods=["GET", "POST"])
 def admin_config():
     global TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, ADMIN_TELEGRAM_ID, ADMIN_PIN
     if request.method == "POST":
@@ -227,16 +513,25 @@ def admin_config():
             TELEGRAM_BOT_TOKEN = str(data["bot_token"]).strip()
         if "chat_id" in data:
             TELEGRAM_CHAT_ID = str(data["chat_id"]).strip()
+            if TELEGRAM_CHAT_ID:
+                authorized_admins.add(TELEGRAM_CHAT_ID)
         if "admin_telegram_id" in data:
             ADMIN_TELEGRAM_ID = str(data["admin_telegram_id"]).strip()
+            if ADMIN_TELEGRAM_ID:
+                authorized_admins.add(ADMIN_TELEGRAM_ID)
         if "admin_pin" in data and str(data["admin_pin"]).strip():
             ADMIN_PIN = str(data["admin_pin"]).strip()
-        return jsonify({"success": True, "message": "Configuration updated in memory"})
+
+        # Start poller if token provided
+        if TELEGRAM_BOT_TOKEN and not bot_thread_started:
+            start_bot_background_poller()
+
+        return jsonify({"success": True, "authorized_admins": list(authorized_admins)})
 
     masked = ""
     if TELEGRAM_BOT_TOKEN:
-        parts = TELEGRAM_BOT_TOKEN.split(":")
-        masked = f"{parts[0]}:***" if len(parts) > 1 else "***"
+        p = TELEGRAM_BOT_TOKEN.split(":")
+        masked = f"{p[0]}:***" if len(p) > 1 else "***"
 
     return jsonify({
         "has_bot_token": bool(TELEGRAM_BOT_TOKEN),
@@ -245,144 +540,66 @@ def admin_config():
         "bot_token_masked": masked,
         "chat_id": TELEGRAM_CHAT_ID,
         "admin_telegram_id": ADMIN_TELEGRAM_ID,
-        "admin_pin_configured": bool(ADMIN_PIN),
-        "database_mode": "In-Memory Experiment Mode"
+        "authorized_admins": list(authorized_admins),
+        "admin_pin_configured": bool(ADMIN_PIN)
     })
 
 
+@app.route("/api/setup-bot-commands", methods=["POST"])
+def setup_commands_route():
+    remove_global_miniapp()
+    return jsonify({"success": True, "message": "Global Mini App button removed and chat commands set."})
+
+
 @app.route("/api/products", methods=["GET", "POST"])
-def products_handler():
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        new_prod = {
-            "id": f"prod-{int(time.time())}",
-            "name": data.get("name", "New Item"),
-            "category": data.get("category", "General"),
-            "price": float(data.get("price", 10.0)),
-            "stock": int(data.get("stock", 10)),
-            "image": data.get("image", "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=300"),
-            "badge": data.get("badge", "New"),
-            "description": data.get("description", "")
-        }
-        memory_products.append(new_prod)
-        return jsonify({"success": True, "product": new_prod}), 201
+def products_route():
     return jsonify({"success": True, "products": memory_products})
 
 
 @app.route("/api/orders", methods=["GET", "POST", "DELETE"])
-@app.route("/api/order", methods=["GET", "POST"])
-def orders_handler():
+def orders_route():
     global memory_orders
     if request.method == "GET":
-        q = request.args.get("q", "").lower().strip()
-        status_filter = request.args.get("status", "").strip()
-
-        results = list(memory_orders)
-        if status_filter:
-            results = [o for o in results if o.get("status") == status_filter]
-        if q:
-            results = [
-                o for o in results if
-                q in o.get("customer_name", "").lower() or
-                q in o.get("phone_number", "") or
-                q in o.get("order_number", "").lower() or
-                q in o.get("product_name", "").lower()
-            ]
-
         return jsonify({
             "success": True,
-            "orders": results,
-            "total_count": len(memory_orders),
+            "orders": memory_orders,
             "stats": {
                 "pending": len([o for o in memory_orders if o.get("status") == "pending"]),
-                "processing": len([o for o in memory_orders if o.get("status") == "processing"]),
                 "delivered": len([o for o in memory_orders if o.get("status") == "delivered"]),
-                "cancelled": len([o for o in memory_orders if o.get("status") == "cancelled"]),
                 "total_revenue": sum(float(o.get("total_price", 0)) for o in memory_orders)
             }
         })
-
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        count = len(memory_orders) + 1
-        ref_id = f"ORD-EXP-{count:03d}"
-        qty = int(data.get("quantity", 1))
-        unit_price = float(data.get("unit_price", 0.0))
-        total_price = float(data.get("total_price", 0.0))
-        if total_price == 0 and unit_price > 0:
-            total_price = unit_price * qty
-
-        new_order = {
-            "id": int(time.time() * 1000),
-            "order_number": data.get("order_number", ref_id),
-            "customer_name": data.get("customer_name", "Experiment Customer"),
-            "phone_number": data.get("phone_number", "N/A"),
-            "product_name": data.get("product_name", "General Product"),
-            "quantity": qty,
-            "unit_price": unit_price,
-            "total_price": total_price,
-            "status": data.get("status", "pending"),
-            "notes": data.get("notes", ""),
-            "source": data.get("source", "Telegram Chat Bot (/order)"),
-            "telegram_user_id": str(data.get("telegram_user_id", "")),
-            "telegram_username": str(data.get("telegram_username", "")),
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime())
-        }
-
-        memory_orders.insert(0, new_order)
-        tg_res = send_telegram_alert(new_order)
-        return jsonify({"success": True, "order": new_order, "telegram": tg_res}), 201
-
     if request.method == "DELETE":
         memory_orders = []
-        return jsonify({"success": True, "message": "All experiment orders cleared from memory."})
+        return jsonify({"success": True})
 
 
 @app.route("/api/order/<int:order_id>/status", methods=["PATCH"])
-@app.route("/api/orders/<int:order_id>/status", methods=["PATCH"])
 def update_status(order_id):
     data = request.get_json(silent=True) or {}
-    new_status = data.get("status", "pending")
-    target = next((o for o in memory_orders if o["id"] == order_id), None)
-    if target:
-        target["status"] = new_status
-        return jsonify({"success": True, "order": target})
-    return jsonify({"success": False, "error": "Order not found"}), 404
-
-
-@app.route("/api/orders/<int:order_id>", methods=["DELETE"])
-def delete_order(order_id):
-    global memory_orders
-    initial_len = len(memory_orders)
-    memory_orders = [o for o in memory_orders if o["id"] != order_id]
-    if len(memory_orders) < initial_len:
-        return jsonify({"success": True, "message": f"Order #{order_id} deleted"})
-    return jsonify({"success": False, "error": "Order not found"}), 404
+    st = data.get("status", "pending")
+    for o in memory_orders:
+        if o["id"] == order_id:
+            o["status"] = st
+            return jsonify({"success": True, "order": o})
+    return jsonify({"success": False, "error": "Not found"}), 404
 
 
 @app.route("/api/test-telegram", methods=["POST"])
-def test_telegram():
-    data = request.get_json(silent=True) or {}
-    custom_token = data.get("bot_token")
-    custom_chat = data.get("chat_id")
-    test_order = {
-        "id": 9999,
-        "order_number": "TEST-EXP-001",
-        "customer_name": "Test Customer (Experiment)",
-        "phone_number": "+1 (555) 019-2834",
-        "product_name": "Wireless Noise-Cancelling Earbuds",
-        "quantity": 1,
-        "unit_price": 49.99,
-        "total_price": 49.99,
-        "notes": "Testing Admin Telegram Alert from Python backend",
-        "source": "Telegram Chat Bot (/order)",
-        "telegram_user_id": custom_chat or "123456789",
-        "telegram_username": "admin_tester"
-    }
-    result = send_telegram_alert(test_order, custom_token, custom_chat)
-    return jsonify(result)
+def test_telegram_alert():
+    target = ADMIN_TELEGRAM_ID or TELEGRAM_CHAT_ID
+    if not target or not TELEGRAM_BOT_TOKEN:
+        return jsonify({"success": False, "error": "Bot token or Chat ID missing."})
+
+    res = telegram_api("sendMessage", {
+        "chat_id": target,
+        "text": "🔔 *Test Alert from Python Backend (Render Web Service)*\nBot is active and ready to deliver customer orders!",
+        "parse_mode": "Markdown"
+    })
+    return jsonify({"success": res.get("ok", False), "result": res})
 
 
 if __name__ == "__main__":
-    print(f"🚀 Python Web Server running on http://{HOST}:{PORT}")
+    start_bot_background_poller()
+    logger.info(f"🚀 Running Web & Bot Service on port {PORT}")
     app.run(host=HOST, port=PORT, debug=False)

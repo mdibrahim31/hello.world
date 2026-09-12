@@ -2,10 +2,15 @@
 """
 Telegram Bot Worker for Render / Background Service
 ---------------------------------------------------
-- Regular Users: Chat-only interaction (/start, /menu, /order, /help, /status).
-  (Mini App is completely removed for regular users).
-- Admin: Only verified Admins (matching ADMIN_TELEGRAM_ID or TELEGRAM_CHAT_ID)
-  can use /admin to receive the private Admin Mini App launcher button.
+- Regular Users: 100% Chat-only interaction (/start, /menu, /order, /help, /status).
+  The global Mini App menu button ("Shop") is explicitly REMOVED via Telegram API.
+- Admin: Only authorized Admins can:
+    1. Access /admin to get the private Admin Mini App launcher card.
+    2. Grant Mini App access to specific Telegram User IDs dynamically using:
+       `/grant <telegram_user_id>` (enables Admin Mini App for that specific user)
+    3. Revoke Mini App access using:
+       `/revoke <telegram_user_id>`
+    4. View active authorized admins using `/admins`.
 - In-memory experiment architecture (Zero database requirement).
 """
 
@@ -34,6 +39,16 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://hello-world-fcg3.onrender.com").strip()
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:3000").strip()
+
+# Set of Authorized Admin Telegram User IDs (Can be added dynamically by the Admin)
+authorized_admins = set()
+if ADMIN_TELEGRAM_ID:
+    for aid in ADMIN_TELEGRAM_ID.split(","):
+        clean_id = aid.strip()
+        if clean_id:
+            authorized_admins.add(clean_id)
+if CHAT_ID:
+    authorized_admins.add(CHAT_ID.strip())
 
 # In-memory product catalog for experiment
 CATALOG = [
@@ -82,33 +97,60 @@ def telegram_api(method, payload=None):
         return {"ok": False, "error": str(e)}
 
 
-def setup_bot_commands():
+def remove_global_miniapp_and_setup_commands():
     """
-    1. Register user-friendly chat commands (/start, /menu, /order, /help, /status).
-    2. Reset chat menu button to default so regular users DO NOT get the Mini App button.
+    CRITICAL:
+    1. Removes the persistent 'Shop' / 'Web App' Menu Button for all standard users.
+       (Sets chat menu button to standard default/commands).
+    2. Registers user-friendly chat commands (/start, /menu, /order, /help, /status).
     """
-    logger.info("Configuring Bot Commands & Restricting User Menu...")
+    logger.info("Enforcing User Chat-Only Policy & Removing Global Mini App Button...")
     
-    # 1. Set public bot commands
+    # 1. Reset Global Menu Button to default (Completely removes 'Shop' Mini App button)
+    menu_res = telegram_api("setChatMenuButton", {
+        "menu_button": {"type": "default"}
+    })
+    logger.info(f"setChatMenuButton (remove global Mini App) response: {menu_res.get('ok')}")
+
+    # 2. Register Chat Commands for regular users
     user_commands = [
-        {"command": "start", "description": "👋 Start bot & view store instructions"},
+        {"command": "start", "description": "👋 Start bot & instructions"},
         {"command": "menu", "description": "🛍️ View products & prices in chat"},
-        {"command": "order", "description": "📦 Place order directly via chat"},
-        {"command": "help", "description": "ℹ️ How to order & customer support"},
-        {"command": "status", "description": "📍 Check your Telegram Chat ID"}
+        {"command": "order", "description": "📦 Place order directly via message"},
+        {"command": "help", "description": "ℹ️ How to order & support"},
+        {"command": "status", "description": "📍 View your Telegram User ID"}
     ]
     cmd_res = telegram_api("setMyCommands", {"commands": user_commands})
     logger.info(f"setMyCommands response: {cmd_res.get('ok')}")
 
-    # 2. Restrict Chat Menu Button to standard default (Removes Mini App for regular users)
-    menu_res = telegram_api("setChatMenuButton", {"menu_button": {"type": "default"}})
-    logger.info(f"setChatMenuButton (default) response: {menu_res.get('ok')}")
+
+def set_user_chat_menu_button(chat_id, enable_miniapp=False):
+    """
+    Control Chat Menu button for an individual user:
+    - If enable_miniapp=True: sets personal Mini App button for this admin.
+    - If enable_miniapp=False: removes Mini App button and reverts to standard default.
+    """
+    if enable_miniapp and WEB_APP_URL:
+        payload = {
+            "chat_id": chat_id,
+            "menu_button": {
+                "type": "web_app",
+                "text": "Admin App",
+                "web_app": {"url": WEB_APP_URL}
+            }
+        }
+    else:
+        payload = {
+            "chat_id": chat_id,
+            "menu_button": {"type": "default"}
+        }
+    return telegram_api("setChatMenuButton", payload)
 
 
 def send_admin_alert(order):
     """Send real-time order alert to Admin Telegram Chat."""
-    target_chat = ADMIN_TELEGRAM_ID or CHAT_ID
-    if not target_chat:
+    target_chats = list(authorized_admins) if authorized_admins else ([ADMIN_TELEGRAM_ID or CHAT_ID] if (ADMIN_TELEGRAM_ID or CHAT_ID) else [])
+    if not target_chats:
         logger.warning("No Admin Chat ID configured. Skipping admin alert.")
         return
 
@@ -135,30 +177,31 @@ def send_admin_alert(order):
         "⚡ _Manage in Admin Mini App: /admin_"
     )
 
-    telegram_api("sendMessage", {
-        "chat_id": target_chat,
-        "text": alert_text,
-        "parse_mode": "Markdown"
-    })
+    for target in target_chats:
+        telegram_api("sendMessage", {
+            "chat_id": target,
+            "text": alert_text,
+            "parse_mode": "Markdown"
+        })
 
 
-def is_admin(user_id, chat_id):
-    """Check if the sender is the authorized administrator."""
+def is_admin(user_id, chat_id=None):
+    """Check if the sender is an authorized administrator."""
     uid = str(user_id).strip()
-    cid = str(chat_id).strip()
+    cid = str(chat_id).strip() if chat_id else ""
     
-    admin_id = str(ADMIN_TELEGRAM_ID).strip()
-    global_chat_id = str(CHAT_ID).strip()
-
-    if admin_id and uid == admin_id:
-        return True
-    if global_chat_id and (uid == global_chat_id or cid == global_chat_id):
+    if uid in authorized_admins or cid in authorized_admins:
         return True
     return False
 
 
 def handle_start(chat_id, user):
-    """Handle /start command."""
+    """Handle /start command for customers."""
+    # Ensure default menu button for regular user (removes any cached Mini App button)
+    user_id = user.get("id")
+    if not is_admin(user_id, chat_id):
+        set_user_chat_menu_button(chat_id, enable_miniapp=False)
+
     first_name = user.get("first_name", "Customer")
     text = (
         f"👋 *Welcome to our Store, {first_name}!*\n"
@@ -168,7 +211,7 @@ def handle_start(chat_id, user):
         "• `/menu` — View our full product list & prices\n"
         "• `/order` — Place an order directly via message\n"
         "• `/help` — How to order & support details\n"
-        "• `/status` — View your Telegram Chat ID\n\n"
+        "• `/status` — View your Telegram User ID\n\n"
         "👉 Type `/menu` now to explore available items!"
     )
     telegram_api("sendMessage", {
@@ -311,7 +354,7 @@ def handle_admin(chat_id, user):
             "The Mini App is reserved exclusively for Store Administrators.\n\n"
             "• Regular customers can place orders directly using `/menu` and `/order`.\n"
             f"• Your Telegram ID: `{user_id}`\n\n"
-            "_(If you are the store owner, configure `ADMIN_TELEGRAM_ID` in your Render settings)_"
+            "_(If you are the store owner, ask an existing admin to grant you access with `/grant {user_id}`)_"
         )
         telegram_api("sendMessage", {
             "chat_id": chat_id,
@@ -320,8 +363,10 @@ def handle_admin(chat_id, user):
         })
         return
 
-    # Authorized Admin -> Send Exclusive Mini App Button
+    # Authorized Admin -> Send Exclusive Mini App Button & configure custom admin menu
     logger.info(f"Authorized Admin {user_id} accessed /admin")
+    set_user_chat_menu_button(chat_id, enable_miniapp=True)
+
     admin_card_text = (
         f"🔐 *ADMIN CONTROL ACCESS*\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -330,7 +375,11 @@ def handle_admin(chat_id, user):
         "• View all live orders in real-time\n"
         "• Update order statuses (Pending/Processing/Delivered)\n"
         "• Test telegram alert notifications\n"
-        "• Manage product catalog & pricing"
+        "• Manage product catalog & pricing\n\n"
+        "🛠️ *Admin Management Commands:*\n"
+        "• `/grant <telegram_id>` — Give Mini App access to another admin\n"
+        "• `/revoke <telegram_id>` — Remove Mini App access\n"
+        "• `/admins` — List all authorized admin IDs"
     )
 
     admin_keyboard = {
@@ -355,6 +404,116 @@ def handle_admin(chat_id, user):
         "text": admin_card_text,
         "parse_mode": "Markdown",
         "reply_markup": admin_keyboard
+    })
+
+
+def handle_grant(chat_id, user, text):
+    """
+    Handle /grant <telegram_user_id>
+    Admin can enable Mini App access for another user by their Telegram ID.
+    """
+    user_id = user.get("id")
+    if not is_admin(user_id, chat_id):
+        telegram_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": "🚫 *Permission Denied.* Only existing admins can grant access.",
+            "parse_mode": "Markdown"
+        })
+        return
+
+    parts = text.strip().split()
+    if len(parts) < 2:
+        telegram_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": "📌 *Usage:* `/grant <telegram_user_id>`\n_Example: `/grant 123456789`_",
+            "parse_mode": "Markdown"
+        })
+        return
+
+    target_id = parts[1].strip()
+    authorized_admins.add(target_id)
+    
+    # Notify target user if possible
+    set_user_chat_menu_button(target_id, enable_miniapp=True)
+
+    telegram_api("sendMessage", {
+        "chat_id": chat_id,
+        "text": f"✅ *Admin Mini App Access Granted* to Telegram ID `{target_id}`!\nThey can now use `/admin` to access the portal.",
+        "parse_mode": "Markdown"
+    })
+
+    # Send notification directly to the newly granted user
+    telegram_api("sendMessage", {
+        "chat_id": target_id,
+        "text": "🎉 *You have been granted Admin Access!* You can now use `/admin` to open the Admin Mini App.",
+        "parse_mode": "Markdown",
+        "reply_markup": {
+            "inline_keyboard": [[{"text": "⚡ Open Admin Mini App", "web_app": {"url": WEB_APP_URL}}]]
+        }
+    })
+
+
+def handle_revoke(chat_id, user, text):
+    """
+    Handle /revoke <telegram_user_id>
+    Admin can remove Mini App access from a specific Telegram User ID.
+    """
+    user_id = user.get("id")
+    if not is_admin(user_id, chat_id):
+        telegram_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": "🚫 *Permission Denied.*",
+            "parse_mode": "Markdown"
+        })
+        return
+
+    parts = text.strip().split()
+    if len(parts) < 2:
+        telegram_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": "📌 *Usage:* `/revoke <telegram_user_id>`\n_Example: `/revoke 123456789`_",
+            "parse_mode": "Markdown"
+        })
+        return
+
+    target_id = parts[1].strip()
+    if target_id in authorized_admins:
+        authorized_admins.remove(target_id)
+        set_user_chat_menu_button(target_id, enable_miniapp=False)
+        telegram_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": f"🚫 *Admin Access Revoked* for Telegram ID `{target_id}`.",
+            "parse_mode": "Markdown"
+        })
+    else:
+        telegram_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": f"ℹ️ Telegram ID `{target_id}` was not in the admin list.",
+            "parse_mode": "Markdown"
+        })
+
+
+def handle_admins_list(chat_id, user):
+    """List all authorized admin Telegram IDs."""
+    user_id = user.get("id")
+    if not is_admin(user_id, chat_id):
+        telegram_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": "🚫 *Permission Denied.*",
+            "parse_mode": "Markdown"
+        })
+        return
+
+    lines = ["👑 *AUTHORIZED ADMIN TELEGRAM IDS:*\n━━━━━━━━━━━━━━━━━━━━━━"]
+    for aid in authorized_admins:
+        lines.append(f"• `{aid}`")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("Use `/grant <id>` or `/revoke <id>` to manage.")
+
+    telegram_api("sendMessage", {
+        "chat_id": chat_id,
+        "text": "\n".join(lines),
+        "parse_mode": "Markdown"
     })
 
 
@@ -387,9 +546,9 @@ def handle_status(chat_id, user):
         f"🆔 *Your User ID:* `{user_id}`\n"
         f"💬 *Current Chat ID:* `{chat_id}`\n"
         f"👤 *Username:* @{user.get('username', 'N/A')}\n"
-        f"🛡️ *Role:* {'👑 Administrator' if is_adm else '👤 Regular Customer'}\n"
+        f"🛡️ *Role:* {'👑 Administrator (Mini App Enabled)' if is_adm else '👤 Regular Customer (Chat Only)'}\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "_(To configure this ID as Admin, set `ADMIN_TELEGRAM_ID` in Render settings)_"
+        "_(Admins can grant you Mini App access with `/grant " + str(user_id) + "`)_"
     )
     telegram_api("sendMessage", {
         "chat_id": chat_id,
@@ -419,6 +578,12 @@ def process_update(update):
             handle_order(chat_id, user, text)
         elif text.startswith("/admin"):
             handle_admin(chat_id, user)
+        elif text.startswith("/grant"):
+            handle_grant(chat_id, user, text)
+        elif text.startswith("/revoke"):
+            handle_revoke(chat_id, user, text)
+        elif text.startswith("/admins"):
+            handle_admins_list(chat_id, user)
         elif text.startswith("/help"):
             handle_help(chat_id)
         elif text.startswith("/status"):
@@ -468,12 +633,12 @@ def run_polling():
     logger.info("=" * 60)
     logger.info("🚀 Starting Telegram Bot Worker (Render Compatible)...")
     logger.info(f"🌐 Web App URL (Admin Only): {WEB_APP_URL}")
-    logger.info(f"👑 Admin ID: {ADMIN_TELEGRAM_ID or 'Not Set'}")
+    logger.info(f"👑 Initial Admins: {list(authorized_admins)}")
     logger.info("=" * 60)
 
-    # Configure bot commands
+    # Remove global mini app menu button and set commands
     try:
-        setup_bot_commands()
+        remove_global_miniapp_and_setup_commands()
     except Exception as e:
         logger.error(f"Error initializing commands: {e}")
 
